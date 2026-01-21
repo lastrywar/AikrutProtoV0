@@ -695,18 +695,86 @@ async def upload_cv(
     
     now = datetime.now(timezone.utc).isoformat()
     
-    # Extract basic info from CV using simple parsing
-    lines = parsed_text.split('\n')
-    name = lines[0].strip() if lines else "Unknown"
+    # Try AI-powered parsing first, fallback to basic parsing
+    settings = await get_ai_settings(current_user["id"])
+    admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    
+    name = ""
     email = ""
     phone = ""
     
-    for line in lines[:20]:  # Check first 20 lines
-        line = line.strip()
-        if '@' in line and '.' in line:
-            email = line
-        if any(c.isdigit() for c in line) and len([c for c in line if c.isdigit()]) >= 8:
-            phone = line
+    # Use AI to extract contact info if API key is available
+    if settings.openrouter_api_key:
+        try:
+            cv_parse_prompt = admin_settings.get("cv_parse_prompt") if admin_settings else None
+            
+            if cv_parse_prompt:
+                prompt = cv_parse_prompt.format(cv_text=parsed_text[:3000])
+            else:
+                prompt = f"""Extract contact information from this CV/resume text.
+
+CV TEXT (first 3000 chars):
+{parsed_text[:3000]}
+
+Return ONLY a JSON object with:
+{{
+  "name": "Full name of the candidate",
+  "email": "Email address or empty string if not found",
+  "phone": "Phone number or empty string if not found"
+}}
+
+Rules:
+- Name should be the person's full name, NOT a company name or job title
+- Phone should be a valid phone number format
+- If information is unclear or not found, return empty string
+- Do NOT make up information"""
+
+            messages = [{"role": "user", "content": prompt}]
+            response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.1)
+            
+            json_start = response.find('{')
+            json_end = response.rfind('}') + 1
+            if json_start >= 0 and json_end > json_start:
+                contact_info = json.loads(response[json_start:json_end])
+                name = contact_info.get("name", "").strip()
+                email = contact_info.get("email", "").strip()
+                phone = contact_info.get("phone", "").strip()
+        except Exception as e:
+            logger.warning(f"AI CV parsing failed, using fallback: {e}")
+    
+    # Fallback to basic parsing if AI didn't work
+    if not name:
+        lines = parsed_text.split('\n')
+        # Try to find name in first few non-empty lines
+        for line in lines[:10]:
+            line = line.strip()
+            if line and len(line) > 2 and len(line) < 50:
+                # Check if it looks like a name (no numbers, no @ symbol)
+                if not any(c.isdigit() for c in line) and '@' not in line:
+                    name = line
+                    break
+        if not name:
+            name = "Unknown Candidate"
+    
+    if not email:
+        import re
+        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+        emails = re.findall(email_pattern, parsed_text)
+        email = emails[0] if emails else ""
+    
+    if not phone:
+        import re
+        # Common phone patterns
+        phone_patterns = [
+            r'\+?[\d\s\-\(\)]{10,}',
+            r'\d{3}[\s\-]?\d{3}[\s\-]?\d{4}',
+            r'\(\d{3}\)\s?\d{3}[\s\-]?\d{4}'
+        ]
+        for pattern in phone_patterns:
+            phones = re.findall(pattern, parsed_text[:1000])
+            if phones:
+                phone = phones[0].strip()
+                break
     
     if candidate_id:
         # Add evidence to existing candidate
