@@ -77,7 +77,9 @@ export const candidatesAPI = {
     api.get('/candidates/search', { params: { q: query, page, limit } }),
   get: (id) => api.get(`/candidates/${id}`),
   create: (data) => api.post('/candidates', data),
+  update: (id, data) => api.put(`/candidates/${id}`, data),
   delete: (id) => api.delete(`/candidates/${id}`),
+  reparse: (id) => api.post(`/candidates/${id}/reparse`),
   uploadCV: (file, candidateId = null) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -125,6 +127,13 @@ export const analysisAPI = {
 export const settingsAPI = {
   get: () => api.get('/settings'),
   update: (data) => api.put('/settings', data),
+};
+
+// Admin Settings API
+export const adminSettingsAPI = {
+  get: () => api.get('/admin-settings'),
+  update: (data) => api.put('/admin-settings', data),
+  resetPrompt: (promptKey) => api.post(`/admin-settings/reset/${promptKey}`),
 };
 
 // Dashboard API
