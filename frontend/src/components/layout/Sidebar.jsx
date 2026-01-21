@@ -8,7 +8,8 @@ import {
   BarChart3, 
   Settings,
   LogOut,
-  Sparkles
+  Sparkles,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
@@ -20,6 +21,7 @@ const navItems = [
   { path: '/candidates', label: 'Talent Pool', icon: Users },
   { path: '/analysis', label: 'Job Fit Analysis', icon: BarChart3 },
   { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/admin-settings', label: 'Super Admin', icon: Shield },
 ];
 
 export const Sidebar = () => {
