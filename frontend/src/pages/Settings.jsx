@@ -6,7 +6,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { settingsAPI } from '../lib/api';
-import { Settings as SettingsIcon, Key, Globe, Cpu, Save, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { Key, Globe, Cpu, Save, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 const AI_MODELS = [
