@@ -1342,6 +1342,292 @@ async def update_settings(data: SettingsUpdate, current_user: dict = Depends(get
     
     return {"message": "Settings updated"}
 
+# ==================== ADMIN SETTINGS ROUTES ====================
+
+class AdminSettingsUpdate(BaseModel):
+    cv_parse_prompt: Optional[str] = None
+    company_values_prompt: Optional[str] = None
+    job_desc_title_prompt: Optional[str] = None
+    job_desc_narrative_prompt: Optional[str] = None
+    playbook_prompt: Optional[str] = None
+    job_fit_prompt: Optional[str] = None
+
+@api_router.get("/admin-settings")
+async def get_admin_settings(current_user: dict = Depends(get_current_user)):
+    """Get all admin/prompt settings"""
+    settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    
+    # Return defaults if not set
+    defaults = {
+        "cv_parse_prompt": """Extract contact information from this CV/resume text.
+
+CV TEXT (first 3000 chars):
+{cv_text}
+
+Return ONLY a JSON object with:
+{{
+  "name": "Full name of the candidate",
+  "email": "Email address or empty string if not found",
+  "phone": "Phone number or empty string if not found"
+}}
+
+Rules:
+- Name should be the person's full name, NOT a company name or job title
+- Phone should be a valid phone number format
+- If information is unclear or not found, return empty string
+- Do NOT make up information""",
+        
+        "company_values_prompt": """Based on this company culture narrative, generate 5-7 structured company values.
+
+Narrative: {narrative}
+
+{language_instruction}
+
+Return a JSON array with this structure:
+[
+  {{"name": "Value Name", "description": "Brief description of this value", "weight": 15}}
+]
+
+Requirements:
+- Each value should have a clear, concise name
+- Description should be 1-2 sentences
+- Weights should total exactly 100
+- Values should be distinct and meaningful for candidate evaluation""",
+        
+        "job_desc_title_prompt": """Generate a professional job description and requirements for the position: {job_title}
+
+{language_instruction}
+
+Return a JSON object with:
+{{
+  "description": "Full job description including: About the Role, Key Responsibilities (as bullet points), What You'll Do",
+  "requirements": "List of requirements including: Required Experience, Required Skills, Qualifications, Nice-to-haves"
+}}
+
+Make it professional, detailed, and suitable for attracting qualified candidates.""",
+        
+        "job_desc_narrative_prompt": """Based on the following job description narrative, generate a professional and structured job description and requirements.
+
+Job Title: {job_title}
+Narrative/Context: {narrative}
+
+{language_instruction}
+
+Return a JSON object with:
+{{
+  "description": "Full job description including: About the Role, Key Responsibilities (as bullet points), What You'll Do",
+  "requirements": "List of requirements including: Required Experience, Required Skills, Qualifications, Nice-to-haves"
+}}
+
+Make it professional, well-structured, and suitable for attracting qualified candidates. Use the narrative as the primary source of information.""",
+        
+        "playbook_prompt": """Generate a comprehensive job evaluation playbook/rubric for screening candidates.
+
+Job Title: {job_title}
+Job Description: {job_description}
+Requirements: {job_requirements}
+{company_values}
+
+{language_instruction}
+
+Create evaluation criteria in 3 categories. Each category must have exactly 5 items with weights totaling 100%.
+
+Return a JSON object:
+{{
+  "character": [
+    {{"name": "Criterion Name", "description": "What to evaluate", "weight": 20}}
+  ],
+  "requirement": [
+    {{"name": "Criterion Name", "description": "What to evaluate", "weight": 20}}
+  ],
+  "skill": [
+    {{"name": "Criterion Name", "description": "What to evaluate", "weight": 20}}
+  ]
+}}
+
+Categories:
+- Character: Personality traits, cultural fit, soft skills, work ethic
+- Requirement: Education, experience, certifications, mandatory qualifications  
+- Skill: Technical abilities, tools, domain expertise
+
+Make criteria specific to this role and measurable from CV/resume review.""",
+        
+        "job_fit_prompt": """You are an AI evaluator for candidate-job fit analysis.
+
+JOB POSITION: {job_title}
+Job Description: {job_description}
+Job Requirements: {job_requirements}
+
+{company_values}
+
+CANDIDATE: {candidate_name}
+CANDIDATE EVIDENCE:
+{candidate_evidence}
+
+EVALUATION PLAYBOOK:
+
+CHARACTER TRAITS:
+{character_playbook}
+
+REQUIREMENTS:
+{requirement_playbook}
+
+SKILLS:
+{skill_playbook}
+
+{language_instruction}
+
+SCORING PROCESS:
+1. For EACH subcategory in each category, analyze the candidate evidence
+2. Assign a score 0-100 based on how well the evidence supports that criterion
+3. Provide short reasoning with specific evidence references
+4. If evidence is missing for a criterion, assign lower score (20-40) and explain
+
+IMPORTANT RULES:
+- Be objective and consistent
+- Do NOT hallucinate evidence - only reference what's in the documents
+- If evidence is missing, score lower and note the gap
+- Use ONLY the selected output language
+
+Return JSON:
+{{
+  "category_scores": [
+    {{"category": "character", "breakdown": [{{"item_id": "id", "item_name": "name", "raw_score": 75, "reasoning": "evidence"}}]}},
+    {{"category": "requirement", "breakdown": [...]}},
+    {{"category": "skill", "breakdown": [...]}}
+  ],
+  "overall_reasoning": "Summary",
+  "company_values_alignment": {{"score": 80, "breakdown": [{{"value_name": "name", "score": 85, "reasoning": "why"}}], "notes": "cultural fit"}},
+  "strengths": ["strength1", "strength2"],
+  "gaps": ["gap1", "gap2"]
+}}"""
+    }
+    
+    if settings:
+        # Merge with defaults
+        for key in defaults:
+            if key not in settings or not settings[key]:
+                settings[key] = defaults[key]
+        return settings
+    
+    return defaults
+
+@api_router.put("/admin-settings")
+async def update_admin_settings(data: AdminSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    """Update admin/prompt settings"""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    update_data["user_id"] = current_user["id"]
+    
+    await db.admin_settings.update_one(
+        {"user_id": current_user["id"]},
+        {"$set": update_data},
+        upsert=True
+    )
+    
+    return {"message": "Admin settings updated"}
+
+@api_router.post("/admin-settings/reset/{prompt_key}")
+async def reset_admin_prompt(prompt_key: str, current_user: dict = Depends(get_current_user)):
+    """Reset a specific prompt to default"""
+    valid_keys = ["cv_parse_prompt", "company_values_prompt", "job_desc_title_prompt", 
+                  "job_desc_narrative_prompt", "playbook_prompt", "job_fit_prompt"]
+    
+    if prompt_key not in valid_keys:
+        raise HTTPException(status_code=400, detail=f"Invalid prompt key. Valid keys: {valid_keys}")
+    
+    await db.admin_settings.update_one(
+        {"user_id": current_user["id"]},
+        {"$unset": {prompt_key: ""}}
+    )
+    
+    return {"message": f"{prompt_key} reset to default"}
+
+# ==================== CANDIDATE UPDATE ROUTE ====================
+
+class CandidateUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+
+@api_router.put("/candidates/{candidate_id}", response_model=CandidateResponse)
+async def update_candidate(candidate_id: str, data: CandidateUpdate, current_user: dict = Depends(get_current_user)):
+    candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user.get("company_id")})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.candidates.update_one({"id": candidate_id}, {"$set": update_data})
+    
+    updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    return CandidateResponse(**updated)
+
+# Re-parse candidate CV with AI
+@api_router.post("/candidates/{candidate_id}/reparse")
+async def reparse_candidate_cv(candidate_id: str, current_user: dict = Depends(get_current_user)):
+    """Re-parse candidate info from CV using AI"""
+    candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user.get("company_id")}, {"_id": 0})
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    # Find CV evidence
+    cv_evidence = next((e for e in candidate.get("evidence", []) if e["type"] == "cv"), None)
+    if not cv_evidence:
+        raise HTTPException(status_code=400, detail="No CV found for this candidate")
+    
+    settings = await get_ai_settings(current_user["id"])
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=400, detail="Configure OpenRouter API key first")
+    
+    admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    cv_parse_prompt = admin_settings.get("cv_parse_prompt") if admin_settings else None
+    
+    parsed_text = cv_evidence["content"]
+    
+    if cv_parse_prompt:
+        prompt = cv_parse_prompt.format(cv_text=parsed_text[:3000])
+    else:
+        prompt = f"""Extract contact information from this CV/resume text.
+
+CV TEXT (first 3000 chars):
+{parsed_text[:3000]}
+
+Return ONLY a JSON object with:
+{{
+  "name": "Full name of the candidate",
+  "email": "Email address or empty string if not found",
+  "phone": "Phone number or empty string if not found"
+}}
+
+Rules:
+- Name should be the person's full name, NOT a company name or job title
+- Phone should be a valid phone number format
+- If information is unclear or not found, return empty string
+- Do NOT make up information"""
+
+    messages = [{"role": "user", "content": prompt}]
+    response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.1)
+    
+    json_start = response.find('{')
+    json_end = response.rfind('}') + 1
+    if json_start >= 0 and json_end > json_start:
+        contact_info = json.loads(response[json_start:json_end])
+        
+        update_data = {
+            "name": contact_info.get("name", candidate["name"]).strip() or candidate["name"],
+            "email": contact_info.get("email", candidate["email"]).strip() or candidate["email"],
+            "phone": contact_info.get("phone", candidate["phone"]).strip() or candidate["phone"],
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.candidates.update_one({"id": candidate_id}, {"$set": update_data})
+        
+        updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+        return CandidateResponse(**updated)
+    
+    raise HTTPException(status_code=500, detail="Failed to parse CV")
+
 # ==================== DASHBOARD ROUTES ====================
 
 @api_router.get("/dashboard/stats")
