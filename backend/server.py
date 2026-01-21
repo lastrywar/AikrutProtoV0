@@ -267,6 +267,8 @@ async def call_openrouter(api_key: str, model: str, messages: List[Dict], temper
         result = response.json()
         return result["choices"][0]["message"]["content"]
 
+from bson import ObjectId
+
 def parse_pdf(file_content: bytes) -> str:
     text = ""
     try:
@@ -284,6 +286,8 @@ def serialize_doc(doc):
     """Recursively convert MongoDB document to JSON-serializable dict"""
     if doc is None:
         return None
+    if isinstance(doc, ObjectId):
+        return str(doc)
     if isinstance(doc, list):
         return [serialize_doc(item) for item in doc]
     if isinstance(doc, dict):
@@ -291,7 +295,7 @@ def serialize_doc(doc):
         for key, value in doc.items():
             if key == '_id':
                 continue  # Skip _id field
-            elif hasattr(value, '__str__') and type(value).__name__ == 'ObjectId':
+            elif isinstance(value, ObjectId):
                 result[key] = str(value)
             elif isinstance(value, dict):
                 result[key] = serialize_doc(value)
