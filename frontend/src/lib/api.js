@@ -1,0 +1,123 @@
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_BACKEND_URL + '/api';
+
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Add auth token to requests
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Handle auth errors
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Auth API
+export const authAPI = {
+  register: (data) => api.post('/auth/register', data),
+  login: (data) => api.post('/auth/login', data),
+  getMe: () => api.get('/auth/me'),
+};
+
+// Company API
+export const companyAPI = {
+  get: () => api.get('/company'),
+  create: (data) => api.post('/company', data),
+  update: (data) => api.put('/company', data),
+  generateValues: (narrative) => {
+    const formData = new FormData();
+    formData.append('narrative', narrative);
+    return api.post('/company/generate-values', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
+// Jobs API
+export const jobsAPI = {
+  list: () => api.get('/jobs'),
+  get: (id) => api.get(`/jobs/${id}`),
+  create: (data) => api.post('/jobs', data),
+  update: (id, data) => api.put(`/jobs/${id}`, data),
+  delete: (id) => api.delete(`/jobs/${id}`),
+  generateDescription: (title, context = '') => {
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('context', context);
+    return api.post('/jobs/generate-description', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  generatePlaybook: (id) => api.post(`/jobs/${id}/generate-playbook`),
+};
+
+// Candidates API
+export const candidatesAPI = {
+  list: () => api.get('/candidates'),
+  get: (id) => api.get(`/candidates/${id}`),
+  create: (data) => api.post('/candidates', data),
+  delete: (id) => api.delete(`/candidates/${id}`),
+  uploadCV: (file, candidateId = null) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (candidateId) {
+      formData.append('candidate_id', candidateId);
+    }
+    return api.post('/candidates/upload-cv', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  uploadEvidence: (candidateId, file, evidenceType) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('evidence_type', evidenceType);
+    return api.post(`/candidates/${candidateId}/upload-evidence`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+};
+
+// Analysis API
+export const analysisAPI = {
+  runBatch: (jobId, candidateIds) =>
+    api.post('/analysis/run', { job_id: jobId, candidate_ids: candidateIds }),
+  getForJob: (jobId, minScore = null) => {
+    const params = minScore ? { min_score: minScore } : {};
+    return api.get(`/analysis/job/${jobId}`, { params });
+  },
+  get: (id) => api.get(`/analysis/${id}`),
+  delete: (id) => api.delete(`/analysis/${id}`),
+};
+
+// Settings API
+export const settingsAPI = {
+  get: () => api.get('/settings'),
+  update: (data) => api.put('/settings', data),
+};
+
+// Dashboard API
+export const dashboardAPI = {
+  getStats: () => api.get('/dashboard/stats'),
+  getRecentActivity: () => api.get('/dashboard/recent-activity'),
+};
+
+export default api;
