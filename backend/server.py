@@ -1095,15 +1095,18 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
                 yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'status': 'skipped', 'message': 'Candidate not found'})}\n\n"
                 continue
             
+            # Serialize to ensure no ObjectId
+            candidate = serialize_doc(candidate)
+            
             # Send progress update - starting
             yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'candidate_name': candidate['name'], 'status': 'analyzing'})}\n\n"
             
             # Check existing
             existing = await db.analyses.find_one({"job_id": request.job_id, "candidate_id": candidate_id}, {"_id": 0})
             if existing:
-                # Ensure no ObjectId in response
-                existing_clean = {k: v for k, v in existing.items() if k != '_id'}
-                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': existing_clean})}\n\n"
+                # Serialize to ensure no ObjectId
+                existing = serialize_doc(existing)
+                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': existing})}\n\n"
                 continue
             
             # Compile evidence
