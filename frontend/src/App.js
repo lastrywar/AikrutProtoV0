@@ -15,6 +15,7 @@ import { JobEdit } from "./pages/JobEdit";
 import { Candidates } from "./pages/Candidates";
 import { Analysis } from "./pages/Analysis";
 import { Settings } from "./pages/Settings";
+import { AdminSettings } from "./pages/AdminSettings";
 
 function App() {
   return (
@@ -34,6 +35,7 @@ function App() {
             <Route path="/candidates" element={<Candidates />} />
             <Route path="/analysis" element={<Analysis />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/admin-settings" element={<AdminSettings />} />
           </Route>
           
           {/* Redirect root to dashboard */}
