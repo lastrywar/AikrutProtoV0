@@ -818,46 +818,58 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
         
         company_values_text = ""
         if company and company.get("values"):
-            company_values_text = "Company Values to consider:\n" + "\n".join([
+            company_values_text = "Company Values to evaluate alignment:\n" + "\n".join([
                 f"- {v['name']} (Weight: {v['weight']}%): {v['description']}" 
                 for v in company["values"]
             ])
         
         playbook = job["playbook"]
         
-        prompt = f"""You are an expert HR analyst. Evaluate this candidate against the job criteria.
+        # Enhanced prompt for better scoring
+        prompt = f"""You are an AI evaluator for candidate-job fit analysis.
 
-JOB: {job['title']}
-Description: {job['description']}
-Requirements: {job['requirements']}
+JOB POSITION: {job['title']}
+Job Description: {job['description']}
+Job Requirements: {job['requirements']}
 
 {company_values_text}
 
+CANDIDATE: {candidate['name']}
 CANDIDATE EVIDENCE:
 {all_evidence}
 
-EVALUATION RUBRIC:
-Character Traits:
+EVALUATION PLAYBOOK:
+
+CHARACTER TRAITS (evaluate personality, soft skills, cultural fit):
 {json.dumps(playbook.get('character', []), indent=2)}
 
-Requirements:
+REQUIREMENTS (evaluate education, experience, certifications):
 {json.dumps(playbook.get('requirement', []), indent=2)}
 
-Skills:
+SKILLS (evaluate technical abilities, tools, domain expertise):
 {json.dumps(playbook.get('skill', []), indent=2)}
 
 {lang_instruction}
 
-For each criterion in each category, score 0-100 based on evidence from the candidate's documents.
-Be objective and cite specific evidence for each score.
+SCORING PROCESS:
+1. For EACH subcategory in each category, analyze the candidate evidence
+2. Assign a score 0-100 based on how well the evidence supports that criterion
+3. Provide short reasoning with specific evidence references
+4. If evidence is missing or unclear, score lower and note the gap
 
-Return JSON:
+IMPORTANT RULES:
+- Be objective and consistent
+- Do NOT hallucinate evidence - only reference what's in the documents
+- If evidence is missing for a criterion, assign lower score (20-40) and explain
+- Use ONLY the selected output language
+
+Return a JSON object with this EXACT structure:
 {{
   "category_scores": [
     {{
       "category": "character",
       "breakdown": [
-        {{"item_id": "id", "item_name": "name", "raw_score": 85, "reasoning": "Evidence-based justification"}}
+        {{"item_id": "{playbook.get('character', [{}])[0].get('id', 'id1') if playbook.get('character') else 'id1'}", "item_name": "Name from playbook", "raw_score": 75, "reasoning": "Specific evidence-based justification"}}
       ]
     }},
     {{
@@ -865,16 +877,23 @@ Return JSON:
       "breakdown": [...]
     }},
     {{
-      "category": "skill",
+      "category": "skill", 
       "breakdown": [...]
     }}
   ],
-  "overall_reasoning": "Summary of candidate fit",
+  "overall_reasoning": "2-3 sentence summary of candidate's overall fit for this role",
   "company_values_alignment": {{
     "score": 80,
-    "notes": "How candidate aligns with company values"
-  }}
-}}"""
+    "breakdown": [
+      {{"value_name": "Value Name", "score": 85, "reasoning": "How candidate aligns"}}
+    ],
+    "notes": "Overall assessment of cultural fit"
+  }},
+  "strengths": ["List of 2-3 key strengths"],
+  "gaps": ["List of 2-3 areas needing improvement or missing evidence"]
+}}
+
+Ensure you evaluate ALL items in each category of the playbook. Do not skip any."""
 
         messages = [{"role": "user", "content": prompt}]
         
@@ -940,6 +959,8 @@ Return JSON:
                 "category_scores": [cs.model_dump() for cs in category_scores],
                 "overall_reasoning": analysis_data.get("overall_reasoning", ""),
                 "company_values_alignment": analysis_data.get("company_values_alignment"),
+                "strengths": analysis_data.get("strengths", []),
+                "gaps": analysis_data.get("gaps", []),
                 "created_at": now
             }
             
@@ -951,6 +972,226 @@ Return JSON:
             continue
     
     return results
+
+# Streaming analysis endpoint for progress tracking
+from fastapi.responses import StreamingResponse as FastAPIStreamingResponse
+
+@api_router.post("/analysis/run-stream")
+async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: dict = Depends(get_current_user)):
+    """Run analysis with streaming progress updates"""
+    job = await db.jobs.find_one({"id": request.job_id, "company_id": current_user.get("company_id")}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    if not job.get("playbook"):
+        raise HTTPException(status_code=400, detail="Job playbook not configured")
+    
+    company = await db.companies.find_one({"id": current_user["company_id"]}, {"_id": 0})
+    settings = await get_ai_settings(current_user["id"])
+    
+    async def generate_results():
+        total = len(request.candidate_ids)
+        
+        for idx, candidate_id in enumerate(request.candidate_ids):
+            candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user["company_id"]}, {"_id": 0})
+            
+            if not candidate:
+                yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'status': 'skipped', 'message': 'Candidate not found'})}\n\n"
+                continue
+            
+            # Send progress update - starting
+            yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'candidate_name': candidate['name'], 'status': 'analyzing'})}\n\n"
+            
+            # Check existing
+            existing = await db.analyses.find_one({"job_id": request.job_id, "candidate_id": candidate_id}, {"_id": 0})
+            if existing:
+                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': existing})}\n\n"
+                continue
+            
+            # Compile evidence
+            all_evidence = "\n\n".join([
+                f"=== {e['type'].upper()} ({e['file_name']}) ===\n{e['content']}"
+                for e in candidate.get("evidence", [])
+            ])
+            
+            if not all_evidence:
+                yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'status': 'skipped', 'message': 'No evidence'})}\n\n"
+                continue
+            
+            lang_instruction = "Respond in English." if settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
+            
+            company_values_text = ""
+            if company and company.get("values"):
+                company_values_text = "Company Values to evaluate alignment:\n" + "\n".join([
+                    f"- {v['name']} (Weight: {v['weight']}%): {v['description']}" 
+                    for v in company["values"]
+                ])
+            
+            playbook = job["playbook"]
+            
+            prompt = f"""You are an AI evaluator for candidate-job fit analysis.
+
+JOB POSITION: {job['title']}
+Job Description: {job['description']}
+Job Requirements: {job['requirements']}
+
+{company_values_text}
+
+CANDIDATE: {candidate['name']}
+CANDIDATE EVIDENCE:
+{all_evidence}
+
+EVALUATION PLAYBOOK:
+
+CHARACTER TRAITS:
+{json.dumps(playbook.get('character', []), indent=2)}
+
+REQUIREMENTS:
+{json.dumps(playbook.get('requirement', []), indent=2)}
+
+SKILLS:
+{json.dumps(playbook.get('skill', []), indent=2)}
+
+{lang_instruction}
+
+For EACH item in the playbook, score 0-100 with evidence-based reasoning.
+If evidence is missing, score lower (20-40) and note the gap.
+
+Return JSON:
+{{
+  "category_scores": [
+    {{"category": "character", "breakdown": [{{"item_id": "id", "item_name": "name", "raw_score": 75, "reasoning": "evidence"}}]}},
+    {{"category": "requirement", "breakdown": [...]}},
+    {{"category": "skill", "breakdown": [...]}}
+  ],
+  "overall_reasoning": "Summary",
+  "company_values_alignment": {{"score": 80, "breakdown": [{{"value_name": "name", "score": 85, "reasoning": "why"}}], "notes": "cultural fit"}},
+  "strengths": ["strength1", "strength2"],
+  "gaps": ["gap1", "gap2"]
+}}"""
+
+            messages = [{"role": "user", "content": prompt}]
+            
+            try:
+                response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.3)
+                
+                json_start = response.find('{')
+                json_end = response.rfind('}') + 1
+                analysis_data = json.loads(response[json_start:json_end])
+                
+                # Calculate scores
+                category_scores = []
+                total_weighted = 0
+                total_weight = 0
+                
+                for cat_data in analysis_data.get("category_scores", []):
+                    category = cat_data["category"]
+                    playbook_items = {item["id"]: item for item in playbook.get(category, [])}
+                    
+                    breakdown = []
+                    cat_total = 0
+                    cat_weight = 0
+                    
+                    for item_score in cat_data.get("breakdown", []):
+                        item_id = item_score.get("item_id", "")
+                        playbook_item = playbook_items.get(item_id, {})
+                        weight = playbook_item.get("weight", 20)
+                        raw_score = item_score.get("raw_score", 0)
+                        weighted = (raw_score * weight) / 100
+                        
+                        breakdown.append({
+                            "item_id": item_id,
+                            "item_name": item_score.get("item_name", playbook_item.get("name", "")),
+                            "raw_score": raw_score,
+                            "weight": weight,
+                            "weighted_score": weighted,
+                            "reasoning": item_score.get("reasoning", "")
+                        })
+                        
+                        cat_total += weighted
+                        cat_weight += weight
+                    
+                    cat_score = (cat_total / cat_weight * 100) if cat_weight > 0 else 0
+                    category_scores.append({
+                        "category": category,
+                        "score": round(cat_score, 1),
+                        "breakdown": breakdown
+                    })
+                    
+                    total_weighted += cat_score
+                    total_weight += 1
+                
+                final_score = round(total_weighted / total_weight, 1) if total_weight > 0 else 0
+                
+                analysis_id = str(uuid.uuid4())
+                now = datetime.now(timezone.utc).isoformat()
+                
+                analysis = {
+                    "id": analysis_id,
+                    "job_id": request.job_id,
+                    "candidate_id": candidate_id,
+                    "final_score": final_score,
+                    "category_scores": category_scores,
+                    "overall_reasoning": analysis_data.get("overall_reasoning", ""),
+                    "company_values_alignment": analysis_data.get("company_values_alignment"),
+                    "strengths": analysis_data.get("strengths", []),
+                    "gaps": analysis_data.get("gaps", []),
+                    "created_at": now
+                }
+                
+                await db.analyses.insert_one(analysis)
+                
+                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': analysis})}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Analysis failed for {candidate_id}: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'error': str(e)})}\n\n"
+        
+        yield f"data: {json.dumps({'type': 'complete', 'total': total})}\n\n"
+    
+    return FastAPIStreamingResponse(
+        generate_results(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
+
+# Candidate search/pagination endpoint
+@api_router.get("/candidates/search")
+async def search_candidates(
+    q: str = Query("", description="Search query"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user)
+):
+    """Search and paginate candidates"""
+    if not current_user.get("company_id"):
+        return {"candidates": [], "total": 0, "page": page, "pages": 0}
+    
+    company_id = current_user["company_id"]
+    
+    # Build search query
+    query = {"company_id": company_id}
+    if q.strip():
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}}
+        ]
+    
+    # Get total count
+    total = await db.candidates.count_documents(query)
+    pages = (total + limit - 1) // limit
+    
+    # Get paginated results
+    skip = (page - 1) * limit
+    candidates = await db.candidates.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    
+    return {
+        "candidates": candidates,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "limit": limit
+    }
 
 @api_router.get("/analysis/job/{job_id}", response_model=List[AnalysisResult])
 async def get_job_analyses(job_id: str, min_score: Optional[float] = None, current_user: dict = Depends(get_current_user)):
