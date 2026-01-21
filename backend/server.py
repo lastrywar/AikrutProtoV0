@@ -1257,7 +1257,8 @@ Return JSON:
                 
                 await db.analyses.insert_one(analysis)
                 
-                # Return clean analysis without any potential ObjectId
+                # Serialize to ensure no ObjectId before JSON dump
+                analysis = serialize_doc(analysis)
                 yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': analysis})}\n\n"
                 
             except Exception as e:
