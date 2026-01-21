@@ -1323,6 +1323,8 @@ async def get_job_analyses(job_id: str, min_score: Optional[float] = None, curre
         query["final_score"] = {"$gte": min_score}
     
     analyses = await db.analyses.find(query, {"_id": 0}).sort("final_score", -1).to_list(1000)
+    # Serialize to ensure no ObjectId in nested structures
+    analyses = [serialize_doc(a) for a in analyses]
     return [AnalysisResult(**a) for a in analyses]
 
 @api_router.get("/analysis/{analysis_id}", response_model=AnalysisResult)
@@ -1330,6 +1332,8 @@ async def get_analysis(analysis_id: str, current_user: dict = Depends(get_curren
     analysis = await db.analyses.find_one({"id": analysis_id}, {"_id": 0})
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
+    # Serialize to ensure no ObjectId
+    analysis = serialize_doc(analysis)
     return AnalysisResult(**analysis)
 
 @api_router.delete("/analysis/{analysis_id}")
