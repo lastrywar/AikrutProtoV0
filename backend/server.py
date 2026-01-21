@@ -991,6 +991,10 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
     company = await db.companies.find_one({"id": current_user["company_id"]}, {"_id": 0})
     settings = await get_ai_settings(current_user["id"])
     
+    # Get prompts from admin settings
+    admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    job_fit_prompt_template = admin_settings.get("job_fit_prompt") if admin_settings else None
+    
     async def generate_results():
         total = len(request.candidate_ids)
         
@@ -1007,7 +1011,9 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
             # Check existing
             existing = await db.analyses.find_one({"job_id": request.job_id, "candidate_id": candidate_id}, {"_id": 0})
             if existing:
-                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': existing})}\n\n"
+                # Ensure no ObjectId in response
+                existing_clean = {k: v for k, v in existing.items() if k != '_id'}
+                yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': existing_clean})}\n\n"
                 continue
             
             # Compile evidence
@@ -1031,7 +1037,22 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
             
             playbook = job["playbook"]
             
-            prompt = f"""You are an AI evaluator for candidate-job fit analysis.
+            # Use custom prompt if available, otherwise default
+            if job_fit_prompt_template:
+                prompt = job_fit_prompt_template.format(
+                    job_title=job['title'],
+                    job_description=job['description'],
+                    job_requirements=job['requirements'],
+                    company_values=company_values_text,
+                    candidate_name=candidate['name'],
+                    candidate_evidence=all_evidence,
+                    character_playbook=json.dumps(playbook.get('character', []), indent=2),
+                    requirement_playbook=json.dumps(playbook.get('requirement', []), indent=2),
+                    skill_playbook=json.dumps(playbook.get('skill', []), indent=2),
+                    language_instruction=lang_instruction
+                )
+            else:
+                prompt = f"""You are an AI evaluator for candidate-job fit analysis.
 
 JOB POSITION: {job['title']}
 Job Description: {job['description']}
@@ -1143,6 +1164,7 @@ Return JSON:
                 
                 await db.analyses.insert_one(analysis)
                 
+                # Return clean analysis without any potential ObjectId
                 yield f"data: {json.dumps({'type': 'result', 'current': idx + 1, 'total': total, 'analysis': analysis})}\n\n"
                 
             except Exception as e:
