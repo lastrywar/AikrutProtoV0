@@ -73,6 +73,8 @@ export const jobsAPI = {
 // Candidates API
 export const candidatesAPI = {
   list: () => api.get('/candidates'),
+  search: (query = '', page = 1, limit = 20) => 
+    api.get('/candidates/search', { params: { q: query, page, limit } }),
   get: (id) => api.get(`/candidates/${id}`),
   create: (data) => api.post('/candidates', data),
   delete: (id) => api.delete(`/candidates/${id}`),
@@ -100,6 +102,17 @@ export const candidatesAPI = {
 export const analysisAPI = {
   runBatch: (jobId, candidateIds) =>
     api.post('/analysis/run', { job_id: jobId, candidate_ids: candidateIds }),
+  runStream: (jobId, candidateIds) => {
+    const token = localStorage.getItem('token');
+    return fetch(`${API_URL}/analysis/run-stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ job_id: jobId, candidate_ids: candidateIds }),
+    });
+  },
   getForJob: (jobId, minScore = null) => {
     const params = minScore ? { min_score: minScore } : {};
     return api.get(`/analysis/job/${jobId}`, { params });
