@@ -1,12 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TopBar } from '../components/layout/TopBar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Slider } from '../components/ui/slider';
 import { Checkbox } from '../components/ui/checkbox';
+import { Progress } from '../components/ui/progress';
+import { ScrollArea } from '../components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { jobsAPI, candidatesAPI, analysisAPI } from '../lib/api';
-import { BarChart3, Play, Loader2, ChevronDown, ChevronUp, Users, Target, Wrench } from 'lucide-react';
+import { 
+  BarChart3, Play, Loader2, ChevronDown, ChevronUp, Users, Target, Wrench, 
+  Search, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
+  Star, TrendingUp, TrendingDown, FileText, Heart
+} from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { ScoreRing, ScoreBadge } from '../components/common/ScoreRing';
 import { toast } from 'sonner';
@@ -15,42 +23,88 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '../components/ui/collapsible';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '../components/ui/dialog';
 
 export const Analysis = () => {
   const [jobs, setJobs] = useState([]);
-  const [candidates, setCandidates] = useState([]);
   const [selectedJob, setSelectedJob] = useState('');
+  const [selectedJobData, setSelectedJobData] = useState(null);
+  
+  // Candidate selection with search/pagination
+  const [candidateSearch, setCandidateSearch] = useState('');
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateData, setCandidateData] = useState({ candidates: [], total: 0, pages: 0 });
   const [selectedCandidates, setSelectedCandidates] = useState([]);
+  
+  // Results
   const [results, setResults] = useState([]);
   const [minScore, setMinScore] = useState(0);
+  
+  // Loading states
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState({ current: 0, total: 0, status: '', candidateName: '' });
+  
+  // Detail view
   const [expandedResult, setExpandedResult] = useState(null);
+  const [detailModalResult, setDetailModalResult] = useState(null);
 
   useEffect(() => {
-    loadData();
+    loadJobs();
   }, []);
+
+  useEffect(() => {
+    loadCandidates();
+  }, [candidateSearch, candidatePage]);
 
   useEffect(() => {
     if (selectedJob) {
       loadResults();
+      loadJobData();
     }
   }, [selectedJob, minScore]);
 
-  const loadData = async () => {
+  const loadJobs = async () => {
     try {
-      const [jobsRes, candidatesRes] = await Promise.all([
-        jobsAPI.list(),
-        candidatesAPI.list()
-      ]);
-      setJobs(jobsRes.data);
-      setCandidates(candidatesRes.data);
+      const res = await jobsAPI.list();
+      setJobs(res.data);
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('Failed to load jobs:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  const loadJobData = async () => {
+    if (!selectedJob) return;
+    try {
+      const res = await jobsAPI.get(selectedJob);
+      setSelectedJobData(res.data);
+    } catch (error) {
+      console.error('Failed to load job:', error);
+    }
+  };
+
+  const loadCandidates = useCallback(async () => {
+    try {
+      const res = await candidatesAPI.search(candidateSearch, candidatePage, 15);
+      setCandidateData(res.data);
+    } catch (error) {
+      // Fallback to regular list if search endpoint not available
+      try {
+        const res = await candidatesAPI.list();
+        setCandidateData({ candidates: res.data, total: res.data.length, pages: 1 });
+      } catch (e) {
+        console.error('Failed to load candidates:', e);
+      }
+    }
+  }, [candidateSearch, candidatePage]);
 
   const loadResults = async () => {
     try {
@@ -67,11 +121,14 @@ export const Analysis = () => {
     );
   };
 
-  const selectAll = () => {
-    if (selectedCandidates.length === candidates.length) {
-      setSelectedCandidates([]);
+  const selectAllVisible = () => {
+    const visibleIds = candidateData.candidates.map(c => c.id);
+    const allSelected = visibleIds.every(id => selectedCandidates.includes(id));
+    
+    if (allSelected) {
+      setSelectedCandidates(prev => prev.filter(id => !visibleIds.includes(id)));
     } else {
-      setSelectedCandidates(candidates.map(c => c.id));
+      setSelectedCandidates(prev => [...new Set([...prev, ...visibleIds])]);
     }
   };
 
@@ -92,20 +149,69 @@ export const Analysis = () => {
     }
 
     setAnalyzing(true);
+    setAnalysisProgress({ current: 0, total: selectedCandidates.length, status: 'starting', candidateName: '' });
+
     try {
-      const res = await analysisAPI.runBatch(selectedJob, selectedCandidates);
-      setResults(res.data);
-      toast.success(`Analyzed ${res.data.length} candidate(s)`);
-      setSelectedCandidates([]);
+      const response = await analysisAPI.runStream(selectedJob, selectedCandidates);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n').filter(line => line.startsWith('data: '));
+
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.type === 'progress') {
+              setAnalysisProgress({
+                current: data.current,
+                total: data.total,
+                status: data.status,
+                candidateName: data.candidate_name || '',
+                message: data.message
+              });
+            } else if (data.type === 'result') {
+              setResults(prev => {
+                const exists = prev.find(r => r.id === data.analysis.id);
+                if (exists) return prev;
+                return [...prev, data.analysis].sort((a, b) => b.final_score - a.final_score);
+              });
+              setAnalysisProgress(prev => ({
+                ...prev,
+                current: data.current,
+                status: 'completed'
+              }));
+            } else if (data.type === 'error') {
+              toast.error(`Failed to analyze: ${data.error}`);
+              setAnalysisProgress(prev => ({
+                ...prev,
+                current: data.current,
+                status: 'error'
+              }));
+            } else if (data.type === 'complete') {
+              toast.success(`Analysis complete! ${data.total} candidate(s) processed.`);
+            }
+          } catch (e) {
+            console.error('Parse error:', e);
+          }
+        }
+      }
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Analysis failed');
+      toast.error(error.message || 'Analysis failed');
     } finally {
       setAnalyzing(false);
+      setSelectedCandidates([]);
+      loadResults();
     }
   };
 
   const getCandidateName = (candidateId) => {
-    const candidate = candidates.find(c => c.id === candidateId);
+    const candidate = candidateData.candidates.find(c => c.id === candidateId);
     return candidate?.name || 'Unknown';
   };
 
@@ -116,6 +222,13 @@ export const Analysis = () => {
       case 'skill': return Wrench;
       default: return BarChart3;
     }
+  };
+
+  const getScoreColor = (score) => {
+    if (score >= 80) return 'text-green-600';
+    if (score >= 60) return 'text-yellow-600';
+    if (score >= 40) return 'text-orange-600';
+    return 'text-red-600';
   };
 
   if (loading) {
@@ -136,7 +249,7 @@ export const Analysis = () => {
           <div className="space-y-6">
             {/* Job Selection */}
             <Card className="border-slate-100 shadow-soft">
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="font-heading text-lg">Select Job</CardTitle>
               </CardHeader>
               <CardContent>
@@ -160,48 +273,140 @@ export const Analysis = () => {
               </CardContent>
             </Card>
 
-            {/* Candidate Selection */}
+            {/* Candidate Selection with Search */}
             <Card className="border-slate-100 shadow-soft">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="font-heading text-lg">Select Candidates</CardTitle>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-heading text-lg">Select Candidates</CardTitle>
+                  <span className="text-sm text-slate-500">
+                    {selectedCandidates.length} selected
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Input
+                    value={candidateSearch}
+                    onChange={(e) => {
+                      setCandidateSearch(e.target.value);
+                      setCandidatePage(1);
+                    }}
+                    placeholder="Search candidates..."
+                    className="pl-9"
+                    data-testid="candidate-search"
+                  />
+                </div>
+
+                {/* Select All Button */}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={selectAll}
-                  className="text-indigo-600"
+                  onClick={selectAllVisible}
+                  className="text-indigo-600 w-full justify-start"
                   data-testid="select-all-btn"
                 >
-                  {selectedCandidates.length === candidates.length ? 'Deselect All' : 'Select All'}
+                  {candidateData.candidates.every(c => selectedCandidates.includes(c.id)) 
+                    ? 'Deselect All Visible' 
+                    : 'Select All Visible'}
                 </Button>
-              </CardHeader>
-              <CardContent>
-                {candidates.length === 0 ? (
-                  <p className="text-sm text-slate-500 text-center py-4">No candidates available</p>
-                ) : (
-                  <div className="space-y-2 max-h-60 overflow-y-auto scrollbar-thin">
-                    {candidates.map(candidate => (
-                      <label
-                        key={candidate.id}
-                        className="flex items-center gap-3 p-3 rounded-lg hover:bg-slate-50 cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={selectedCandidates.includes(candidate.id)}
-                          onCheckedChange={() => toggleCandidate(candidate.id)}
-                          data-testid={`select-candidate-${candidate.id}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm text-slate-900 truncate">{candidate.name}</p>
-                          <p className="text-xs text-slate-500 truncate">{candidate.email}</p>
-                        </div>
-                        <span className="text-xs text-slate-400">
-                          {candidate.evidence?.length || 0} docs
-                        </span>
-                      </label>
-                    ))}
+
+                {/* Candidate List */}
+                <ScrollArea className="h-[280px]">
+                  {candidateData.candidates.length === 0 ? (
+                    <p className="text-sm text-slate-500 text-center py-4">No candidates found</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {candidateData.candidates.map(candidate => (
+                        <label
+                          key={candidate.id}
+                          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                            selectedCandidates.includes(candidate.id)
+                              ? 'bg-indigo-50 border border-indigo-200'
+                              : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <Checkbox
+                            checked={selectedCandidates.includes(candidate.id)}
+                            onCheckedChange={() => toggleCandidate(candidate.id)}
+                            data-testid={`select-candidate-${candidate.id}`}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-slate-900 truncate">{candidate.name}</p>
+                            <p className="text-xs text-slate-500 truncate">{candidate.email}</p>
+                          </div>
+                          <span className="text-xs text-slate-400 flex items-center gap-1">
+                            <FileText className="w-3 h-3" />
+                            {candidate.evidence?.length || 0}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+
+                {/* Pagination */}
+                {candidateData.pages > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCandidatePage(p => Math.max(1, p - 1))}
+                      disabled={candidatePage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <span className="text-sm text-slate-500">
+                      Page {candidatePage} of {candidateData.pages}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setCandidatePage(p => Math.min(candidateData.pages, p + 1))}
+                      disabled={candidatePage === candidateData.pages}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
                   </div>
                 )}
+
+                <p className="text-xs text-slate-400 text-center">
+                  Total: {candidateData.total} candidates
+                </p>
               </CardContent>
             </Card>
+
+            {/* Analysis Progress */}
+            {analyzing && (
+              <Card className="border-indigo-200 bg-indigo-50">
+                <CardContent className="pt-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-indigo-700">Analyzing...</span>
+                      <span className="text-sm text-indigo-600">
+                        {analysisProgress.current} / {analysisProgress.total}
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(analysisProgress.current / analysisProgress.total) * 100} 
+                      className="h-2"
+                    />
+                    {analysisProgress.candidateName && (
+                      <p className="text-xs text-indigo-600 flex items-center gap-2">
+                        {analysisProgress.status === 'analyzing' && (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        )}
+                        {analysisProgress.status === 'completed' && (
+                          <CheckCircle className="w-3 h-3" />
+                        )}
+                        {analysisProgress.candidateName}
+                      </p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Run Analysis Button */}
             <Button
@@ -213,7 +418,7 @@ export const Analysis = () => {
               {analyzing ? (
                 <>
                   <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Analyzing...
+                  Analyzing {analysisProgress.current}/{analysisProgress.total}...
                 </>
               ) : (
                 <>
@@ -225,7 +430,7 @@ export const Analysis = () => {
 
             {/* Shortlist Filter */}
             <Card className="border-slate-100 shadow-soft">
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="font-heading text-lg">Shortlist Filter</CardTitle>
                 <CardDescription>Minimum score threshold</CardDescription>
               </CardHeader>
@@ -257,7 +462,7 @@ export const Analysis = () => {
                 </CardTitle>
                 <CardDescription>
                   {results.length > 0 
-                    ? `${results.length} candidate(s) scored`
+                    ? `${results.length} candidate(s) scored${minScore > 0 ? ` (≥${minScore}%)` : ''}`
                     : 'Select candidates and run analysis'}
                 </CardDescription>
               </CardHeader>
@@ -283,79 +488,112 @@ export const Analysis = () => {
                         >
                           <CollapsibleTrigger asChild>
                             <div
-                              className="p-4 cursor-pointer flex items-center justify-between"
+                              className="p-4 cursor-pointer"
                               data-testid={`result-${result.id}`}
                             >
-                              <div className="flex items-center gap-4">
-                                <div className="font-semibold text-lg text-slate-400 w-8">
-                                  #{index + 1}
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
+                                  <div className="font-semibold text-lg text-slate-400 w-8">
+                                    #{index + 1}
+                                  </div>
+                                  <ScoreRing score={result.final_score} size={56} strokeWidth={5} />
+                                  <div>
+                                    <p className="font-heading font-semibold text-slate-900">
+                                      {getCandidateName(result.candidate_id)}
+                                    </p>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <ScoreBadge score={result.final_score} />
+                                      {result.final_score >= minScore && minScore > 0 && (
+                                        <span className="badge-success text-xs">
+                                          <CheckCircle className="w-3 h-3 mr-1 inline" />
+                                          Shortlisted
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                                <ScoreRing score={result.final_score} size={56} strokeWidth={5} />
-                                <div>
-                                  <p className="font-heading font-semibold text-slate-900">
-                                    {getCandidateName(result.candidate_id)}
-                                  </p>
-                                  <ScoreBadge score={result.final_score} />
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setDetailModalResult(result);
+                                    }}
+                                    className="text-indigo-600"
+                                  >
+                                    View Details
+                                  </Button>
+                                  {expandedResult === result.id ? (
+                                    <ChevronUp className="w-5 h-5 text-slate-400" />
+                                  ) : (
+                                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                                  )}
                                 </div>
                               </div>
-                              {expandedResult === result.id ? (
-                                <ChevronUp className="w-5 h-5 text-slate-400" />
-                              ) : (
-                                <ChevronDown className="w-5 h-5 text-slate-400" />
-                              )}
                             </div>
                           </CollapsibleTrigger>
                           
                           <CollapsibleContent>
-                            <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-100 mt-0">
-                              {/* Overall Reasoning */}
+                            <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-100">
+                              {/* Quick Summary */}
                               {result.overall_reasoning && (
                                 <div className="pt-4">
-                                  <p className="text-sm font-medium text-slate-700 mb-2">Overall Assessment</p>
+                                  <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
                                   <p className="text-sm text-slate-600 bg-white p-3 rounded-lg">
                                     {result.overall_reasoning}
                                   </p>
                                 </div>
                               )}
+
+                              {/* Strengths & Gaps */}
+                              <div className="grid grid-cols-2 gap-4">
+                                {result.strengths?.length > 0 && (
+                                  <div className="bg-green-50 rounded-lg p-3">
+                                    <p className="text-xs font-medium text-green-700 mb-2 flex items-center gap-1">
+                                      <TrendingUp className="w-3 h-3" /> Strengths
+                                    </p>
+                                    <ul className="text-xs text-green-700 space-y-1">
+                                      {result.strengths.map((s, i) => (
+                                        <li key={i}>• {s}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {result.gaps?.length > 0 && (
+                                  <div className="bg-amber-50 rounded-lg p-3">
+                                    <p className="text-xs font-medium text-amber-700 mb-2 flex items-center gap-1">
+                                      <TrendingDown className="w-3 h-3" /> Gaps
+                                    </p>
+                                    <ul className="text-xs text-amber-700 space-y-1">
+                                      {result.gaps.map((g, i) => (
+                                        <li key={i}>• {g}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
                               
-                              {/* Category Scores */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+                              {/* Category Overview */}
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                 {result.category_scores?.map(cat => {
                                   const Icon = getCategoryIcon(cat.category);
                                   return (
-                                    <div key={cat.category} className="bg-white rounded-lg p-4">
-                                      <div className="flex items-center gap-2 mb-3">
-                                        <Icon className="w-4 h-4 text-indigo-500" />
-                                        <span className="font-medium capitalize text-sm">{cat.category}</span>
-                                        <ScoreBadge score={cat.score} showLabel={false} />
+                                    <div key={cat.category} className="bg-white rounded-lg p-3 border border-slate-100">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                          <Icon className="w-4 h-4 text-indigo-500" />
+                                          <span className="font-medium capitalize text-sm">{cat.category}</span>
+                                        </div>
+                                        <span className={`font-bold ${getScoreColor(cat.score)}`}>
+                                          {Math.round(cat.score)}
+                                        </span>
                                       </div>
-                                      <div className="space-y-2">
-                                        {cat.breakdown?.slice(0, 3).map(item => (
-                                          <div key={item.item_id} className="text-xs">
-                                            <div className="flex justify-between mb-1">
-                                              <span className="text-slate-600 truncate">{item.item_name}</span>
-                                              <span className="font-medium">{Math.round(item.raw_score)}</span>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
+                                      <Progress value={cat.score} className="h-1.5" />
                                     </div>
                                   );
                                 })}
                               </div>
-
-                              {/* Company Values Alignment */}
-                              {result.company_values_alignment && (
-                                <div className="bg-white rounded-lg p-4">
-                                  <p className="text-sm font-medium text-slate-700 mb-2">Company Values Alignment</p>
-                                  <div className="flex items-center gap-3">
-                                    <ScoreRing score={result.company_values_alignment.score || 0} size={40} strokeWidth={4} />
-                                    <p className="text-sm text-slate-600">
-                                      {result.company_values_alignment.notes || 'No notes available'}
-                                    </p>
-                                  </div>
-                                </div>
-                              )}
                             </div>
                           </CollapsibleContent>
                         </div>
@@ -368,6 +606,222 @@ export const Analysis = () => {
           </div>
         </div>
       </div>
+
+      {/* Detail Modal */}
+      <Dialog open={!!detailModalResult} onOpenChange={() => setDetailModalResult(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="font-heading flex items-center gap-3">
+              <ScoreRing score={detailModalResult?.final_score || 0} size={48} strokeWidth={5} />
+              <div>
+                <span>{getCandidateName(detailModalResult?.candidate_id)}</span>
+                <p className="text-sm font-normal text-slate-500">
+                  Detailed Analysis Report
+                </p>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+          
+          <ScrollArea className="flex-1 pr-4">
+            {detailModalResult && (
+              <Tabs defaultValue="overview" className="w-full">
+                <TabsList className="bg-slate-100 p-1 rounded-full mb-4">
+                  <TabsTrigger value="overview" className="rounded-full px-4">Overview</TabsTrigger>
+                  <TabsTrigger value="character" className="rounded-full px-4">Character</TabsTrigger>
+                  <TabsTrigger value="requirement" className="rounded-full px-4">Requirements</TabsTrigger>
+                  <TabsTrigger value="skill" className="rounded-full px-4">Skills</TabsTrigger>
+                  <TabsTrigger value="values" className="rounded-full px-4">Values</TabsTrigger>
+                </TabsList>
+
+                {/* Overview Tab */}
+                <TabsContent value="overview" className="space-y-4">
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="bg-slate-50 rounded-xl p-4 text-center">
+                      <p className="text-xs text-slate-500 mb-1">Final Score</p>
+                      <p className={`text-2xl font-bold ${getScoreColor(detailModalResult.final_score)}`}>
+                        {Math.round(detailModalResult.final_score)}
+                      </p>
+                    </div>
+                    {detailModalResult.category_scores?.map(cat => (
+                      <div key={cat.category} className="bg-slate-50 rounded-xl p-4 text-center">
+                        <p className="text-xs text-slate-500 mb-1 capitalize">{cat.category}</p>
+                        <p className={`text-2xl font-bold ${getScoreColor(cat.score)}`}>
+                          {Math.round(cat.score)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-4">
+                    <p className="font-medium text-slate-700 mb-2">Overall Assessment</p>
+                    <p className="text-slate-600">{detailModalResult.overall_reasoning}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-green-50 rounded-xl p-4">
+                      <p className="font-medium text-green-700 mb-2 flex items-center gap-2">
+                        <Star className="w-4 h-4" /> Key Strengths
+                      </p>
+                      <ul className="space-y-2">
+                        {detailModalResult.strengths?.map((s, i) => (
+                          <li key={i} className="text-sm text-green-700 flex items-start gap-2">
+                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="bg-amber-50 rounded-xl p-4">
+                      <p className="font-medium text-amber-700 mb-2 flex items-center gap-2">
+                        <AlertCircle className="w-4 h-4" /> Areas for Improvement
+                      </p>
+                      <ul className="space-y-2">
+                        {detailModalResult.gaps?.map((g, i) => (
+                          <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
+                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            {g}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                {/* Category Tabs */}
+                {['character', 'requirement', 'skill'].map(category => {
+                  const catData = detailModalResult.category_scores?.find(c => c.category === category);
+                  const Icon = getCategoryIcon(category);
+                  const playbookItems = selectedJobData?.playbook?.[category] || [];
+                  
+                  return (
+                    <TabsContent key={category} value={category} className="space-y-4">
+                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                            <Icon className="w-5 h-5 text-indigo-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium capitalize">{category}</p>
+                            <p className="text-sm text-slate-500">
+                              {playbookItems.length} criteria evaluated
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-3xl font-bold ${getScoreColor(catData?.score || 0)}`}>
+                            {Math.round(catData?.score || 0)}
+                          </p>
+                          <p className="text-xs text-slate-500">Category Score</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        {catData?.breakdown?.map((item, idx) => {
+                          const playbookItem = playbookItems.find(p => p.id === item.item_id) || {};
+                          return (
+                            <div key={item.item_id || idx} className="bg-white border border-slate-100 rounded-xl p-4">
+                              <div className="flex items-start justify-between mb-2">
+                                <div className="flex-1">
+                                  <p className="font-medium text-slate-900">
+                                    {item.item_name || playbookItem.name || `Criterion ${idx + 1}`}
+                                  </p>
+                                  {playbookItem.description && (
+                                    <p className="text-xs text-slate-500 mt-1">{playbookItem.description}</p>
+                                  )}
+                                </div>
+                                <div className="text-right ml-4">
+                                  <p className={`text-xl font-bold ${getScoreColor(item.raw_score)}`}>
+                                    {Math.round(item.raw_score)}
+                                  </p>
+                                  <p className="text-xs text-slate-500">Weight: {item.weight}%</p>
+                                </div>
+                              </div>
+                              <Progress value={item.raw_score} className="h-1.5 mb-2" />
+                              <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg">
+                                {item.reasoning || 'No reasoning provided'}
+                              </p>
+                            </div>
+                          );
+                        })}
+
+                        {/* Show missing playbook items */}
+                        {playbookItems
+                          .filter(p => !catData?.breakdown?.find(b => b.item_id === p.id))
+                          .map(item => (
+                            <div key={item.id} className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <p className="font-medium text-slate-500">{item.name}</p>
+                                  <p className="text-xs text-slate-400">{item.description}</p>
+                                </div>
+                                <span className="text-xs text-slate-400">Not evaluated</span>
+                              </div>
+                            </div>
+                          ))
+                        }
+                      </div>
+                    </TabsContent>
+                  );
+                })}
+
+                {/* Company Values Tab */}
+                <TabsContent value="values" className="space-y-4">
+                  {detailModalResult.company_values_alignment ? (
+                    <>
+                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-pink-100 flex items-center justify-center">
+                            <Heart className="w-5 h-5 text-pink-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium">Company Values Alignment</p>
+                            <p className="text-sm text-slate-500">Cultural fit assessment</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-3xl font-bold ${getScoreColor(detailModalResult.company_values_alignment.score || 0)}`}>
+                            {Math.round(detailModalResult.company_values_alignment.score || 0)}
+                          </p>
+                          <p className="text-xs text-slate-500">Alignment Score</p>
+                        </div>
+                      </div>
+
+                      {detailModalResult.company_values_alignment.notes && (
+                        <div className="bg-white border border-slate-100 rounded-xl p-4">
+                          <p className="text-sm text-slate-600">
+                            {detailModalResult.company_values_alignment.notes}
+                          </p>
+                        </div>
+                      )}
+
+                      {detailModalResult.company_values_alignment.breakdown?.map((value, idx) => (
+                        <div key={idx} className="bg-white border border-slate-100 rounded-xl p-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <p className="font-medium text-slate-900">{value.value_name}</p>
+                            <p className={`text-xl font-bold ${getScoreColor(value.score)}`}>
+                              {Math.round(value.score)}
+                            </p>
+                          </div>
+                          <Progress value={value.score} className="h-1.5 mb-2" />
+                          <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg">
+                            {value.reasoning}
+                          </p>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500">
+                      <Heart className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                      <p>No company values alignment data available</p>
+                      <p className="text-sm">Configure company values in Company Settings to enable this.</p>
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
