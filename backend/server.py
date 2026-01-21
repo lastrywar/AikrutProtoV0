@@ -183,6 +183,8 @@ class AnalysisResult(BaseModel):
     category_scores: List[CategoryScore]
     overall_reasoning: str
     company_values_alignment: Optional[Dict[str, Any]] = None
+    strengths: Optional[List[str]] = []
+    gaps: Optional[List[str]] = []
     created_at: str
 
 class BatchAnalysisRequest(BaseModel):
