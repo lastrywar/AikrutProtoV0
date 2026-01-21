@@ -24,6 +24,9 @@ export const JobEdit = () => {
   const [generating, setGenerating] = useState(false);
   const [generatingPlaybook, setGeneratingPlaybook] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [generateMode, setGenerateMode] = useState('title'); // 'title' or 'narrative'
+  const [narrative, setNarrative] = useState('');
   
   const [form, setForm] = useState({
     title: '',
