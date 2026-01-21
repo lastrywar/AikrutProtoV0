@@ -303,8 +303,8 @@ export const JobEdit = () => {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={handleGenerateDescription}
-                      disabled={generating || !form.title}
+                      onClick={() => setShowGenerateDialog(true)}
+                      disabled={generating}
                       className="text-indigo-600 hover:text-indigo-700"
                       data-testid="generate-desc-btn"
                     >
