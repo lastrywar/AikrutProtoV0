@@ -146,25 +146,52 @@ export const Settings = () => {
                 AI Model
               </CardTitle>
               <CardDescription>
-                Select the AI model for analysis and generation
+                Enter or select the AI model for analysis and generation
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Select
-                value={settings.model_name}
-                onValueChange={(v) => setSettings(prev => ({ ...prev, model_name: v }))}
-              >
-                <SelectTrigger data-testid="model-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="modelName">Model Name</Label>
+                <Input
+                  id="modelName"
+                  value={settings.model_name}
+                  onChange={(e) => setSettings(prev => ({ ...prev, model_name: e.target.value }))}
+                  placeholder="e.g., openai/gpt-4o or anthropic/claude-3.5-sonnet"
+                  data-testid="model-input"
+                />
+                <p className="text-xs text-slate-500">
+                  Paste any model from{' '}
+                  <a 
+                    href="https://openrouter.ai/models" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-indigo-600 hover:underline"
+                  >
+                    openrouter.ai/models
+                  </a>
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-slate-500 text-sm">Quick Select</Label>
+                <div className="flex flex-wrap gap-2">
                   {AI_MODELS.map(model => (
-                    <SelectItem key={model.value} value={model.value}>
+                    <button
+                      key={model.value}
+                      type="button"
+                      onClick={() => setSettings(prev => ({ ...prev, model_name: model.value }))}
+                      className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
+                        settings.model_name === model.value
+                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50'
+                      }`}
+                      data-testid={`model-quick-${model.value.replace(/\//g, '-')}`}
+                    >
                       {model.label}
-                    </SelectItem>
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
