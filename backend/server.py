@@ -280,6 +280,28 @@ def parse_pdf(file_content: bytes) -> str:
         raise HTTPException(status_code=400, detail="Failed to parse PDF file")
     return text.strip()
 
+def serialize_doc(doc):
+    """Recursively convert MongoDB document to JSON-serializable dict"""
+    if doc is None:
+        return None
+    if isinstance(doc, list):
+        return [serialize_doc(item) for item in doc]
+    if isinstance(doc, dict):
+        result = {}
+        for key, value in doc.items():
+            if key == '_id':
+                continue  # Skip _id field
+            elif hasattr(value, '__str__') and type(value).__name__ == 'ObjectId':
+                result[key] = str(value)
+            elif isinstance(value, dict):
+                result[key] = serialize_doc(value)
+            elif isinstance(value, list):
+                result[key] = serialize_doc(value)
+            else:
+                result[key] = value
+        return result
+    return doc
+
 # ==================== AUTH ROUTES ====================
 
 @api_router.post("/auth/register", response_model=TokenResponse)
