@@ -509,6 +509,116 @@ export const JobEdit = () => {
             )}
           </Button>
         </div>
+
+        {/* Generate Description Dialog */}
+        <Dialog open={showGenerateDialog} onOpenChange={setShowGenerateDialog}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="font-heading flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-indigo-500" />
+                Generate Job Description
+              </DialogTitle>
+              <DialogDescription>
+                Choose how you want to generate the job description and requirements
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 pt-4">
+              {/* Option 1: Based on Title */}
+              <div
+                onClick={() => setGenerateMode('title')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  generateMode === 'title'
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-indigo-200'
+                }`}
+                data-testid="generate-mode-title"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${generateMode === 'title' ? 'bg-indigo-100' : 'bg-slate-100'}`}>
+                    <FileText className={`w-5 h-5 ${generateMode === 'title' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-900">Generate from Job Title</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      AI will generate a standard job description based on the job title: <strong>{form.title || '(enter title first)'}</strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Option 2: Based on Narrative */}
+              <div
+                onClick={() => setGenerateMode('narrative')}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  generateMode === 'narrative'
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-indigo-200'
+                }`}
+                data-testid="generate-mode-narrative"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${generateMode === 'narrative' ? 'bg-indigo-100' : 'bg-slate-100'}`}>
+                    <PenLine className={`w-5 h-5 ${generateMode === 'narrative' ? 'text-indigo-600' : 'text-slate-500'}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-slate-900">Generate from Narrative</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      Describe the role in your own words and AI will create a structured job description
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Narrative Input (only shown when narrative mode selected) */}
+              {generateMode === 'narrative' && (
+                <div className="space-y-2 animate-fade-in">
+                  <Label htmlFor="narrative">Describe the role</Label>
+                  <Textarea
+                    id="narrative"
+                    value={narrative}
+                    onChange={(e) => setNarrative(e.target.value)}
+                    placeholder="Example: We need a senior backend developer who will work on our microservices architecture. They should have experience with Python, FastAPI, and cloud technologies. The role involves designing APIs, optimizing database performance, and mentoring junior developers..."
+                    rows={5}
+                    data-testid="generate-narrative-input"
+                  />
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowGenerateDialog(false);
+                    setNarrative('');
+                  }}
+                  className="rounded-full"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleGenerateDescription}
+                  disabled={generating || (generateMode === 'title' && !form.title) || (generateMode === 'narrative' && !narrative.trim())}
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
+                  data-testid="generate-confirm-btn"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Generate
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
