@@ -9,8 +9,9 @@ import { Textarea } from '../components/ui/textarea';
 import { Slider } from '../components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { jobsAPI } from '../lib/api';
-import { Sparkles, Save, Loader2, ArrowLeft, Trash2, Plus, Users, Target, Wrench } from 'lucide-react';
+import { Sparkles, Save, Loader2, ArrowLeft, Trash2, Plus, Users, Target, Wrench, FileText, PenLine } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const JobEdit = () => {
