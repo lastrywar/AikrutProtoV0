@@ -99,20 +99,40 @@ export const JobEdit = () => {
   };
 
   const handleGenerateDescription = async () => {
-    if (!form.title.trim()) {
+    if (generateMode === 'title' && !form.title.trim()) {
       toast.error('Enter a job title first');
+      return;
+    }
+    if (generateMode === 'narrative' && !narrative.trim()) {
+      toast.error('Enter a job description narrative first');
       return;
     }
 
     setGenerating(true);
     try {
-      const res = await jobsAPI.generateDescription(form.title, '');
+      const context = generateMode === 'narrative' ? narrative : '';
+      const res = await jobsAPI.generateDescription(form.title || 'Job Position', context);
+      
+      // Handle both string and object responses
+      let description = '';
+      let requirements = '';
+      
+      if (typeof res.data === 'string') {
+        description = res.data;
+      } else if (res.data) {
+        description = res.data.description || '';
+        requirements = res.data.requirements || '';
+      }
+      
       setForm(prev => ({
         ...prev,
-        description: res.data.description || prev.description,
-        requirements: res.data.requirements || prev.requirements
+        description: description || prev.description,
+        requirements: requirements || prev.requirements
       }));
-      toast.success('Description generated!');
+      
+      toast.success('Job description generated!');
+      setShowGenerateDialog(false);
+      setNarrative('');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to generate description');
     } finally {
