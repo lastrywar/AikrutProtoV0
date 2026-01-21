@@ -891,9 +891,13 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
         if not candidate:
             continue
         
+        # Serialize to remove any ObjectId
+        candidate = serialize_doc(candidate)
+        
         # Check if analysis already exists
         existing = await db.analyses.find_one({"job_id": request.job_id, "candidate_id": candidate_id}, {"_id": 0})
         if existing:
+            existing = serialize_doc(existing)
             results.append(AnalysisResult(**existing))
             continue
         
