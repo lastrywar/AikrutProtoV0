@@ -512,16 +512,32 @@ async def generate_job_description(title: str = Form(...), context: str = Form("
     
     lang_instruction = "Write in English." if settings.language == "en" else "Write in Indonesian (Bahasa Indonesia)."
     
-    prompt = f"""Generate a professional job description and requirements for the position: {title}
+    if context.strip():
+        # Generate based on narrative
+        prompt = f"""Based on the following job description narrative, generate a professional and structured job description and requirements.
 
-Additional context: {context}
+Job Title: {title}
+Narrative/Context: {context}
 
 {lang_instruction}
 
 Return a JSON object with:
 {{
-  "description": "Full job description (responsibilities, about the role, what you'll do)",
-  "requirements": "List of requirements (experience, skills, qualifications)"
+  "description": "Full job description including: About the Role, Key Responsibilities (as bullet points), What You'll Do",
+  "requirements": "List of requirements including: Required Experience, Required Skills, Qualifications, Nice-to-haves"
+}}
+
+Make it professional, well-structured, and suitable for attracting qualified candidates. Use the narrative as the primary source of information."""
+    else:
+        # Generate based on title only
+        prompt = f"""Generate a professional job description and requirements for the position: {title}
+
+{lang_instruction}
+
+Return a JSON object with:
+{{
+  "description": "Full job description including: About the Role, Key Responsibilities (as bullet points), What You'll Do",
+  "requirements": "List of requirements including: Required Experience, Required Skills, Qualifications, Nice-to-haves"
 }}
 
 Make it professional, detailed, and suitable for attracting qualified candidates."""
@@ -532,7 +548,11 @@ Make it professional, detailed, and suitable for attracting qualified candidates
     try:
         json_start = response.find('{')
         json_end = response.rfind('}') + 1
-        return json.loads(response[json_start:json_end])
+        if json_start >= 0 and json_end > json_start:
+            result = json.loads(response[json_start:json_end])
+            return result
+        else:
+            return {"description": response, "requirements": ""}
     except:
         return {"description": response, "requirements": ""}
 
