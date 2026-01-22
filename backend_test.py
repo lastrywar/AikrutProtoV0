@@ -5,7 +5,7 @@ from datetime import datetime
 import uuid
 
 class TalentAITester:
-    def __init__(self, base_url="https://hr-ai-recruiter.preview.emergentagent.com"):
+    def __init__(self, base_url="https://aikrut-v0-deploy.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.user_id = None
