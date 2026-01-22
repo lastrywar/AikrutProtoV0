@@ -836,6 +836,157 @@ export const Candidates = () => {
           </DialogContent>
         </Dialog>
 
+        {/* NEW: PDF Duplicate Detection Dialog */}
+        <Dialog open={showPdfDuplicateDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowPdfDuplicateDialog(false);
+            setPdfDuplicates(null);
+            setPendingPdfFile(null);
+            setSelectedPdfMergeTarget(null);
+            setExtractedInfo(null);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="font-heading flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Potential Duplicate Detected
+              </DialogTitle>
+              <DialogDescription>
+                The uploaded PDF matches an existing candidate. Choose how to proceed.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {pdfDuplicates && (
+              <div className="space-y-4 py-4">
+                {/* Extracted info from new PDF */}
+                {extractedInfo && (
+                  <Card className="border-slate-200 bg-slate-50">
+                    <CardContent className="pt-4">
+                      <p className="text-sm font-medium text-slate-700 mb-2">Extracted from uploaded file:</p>
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="text-slate-500">Name:</span>
+                          <p className="font-medium">{extractedInfo.name || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Email:</span>
+                          <p className="font-medium">{extractedInfo.email || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Phone:</span>
+                          <p className="font-medium">{extractedInfo.phone || '-'}</p>
+                        </div>
+                      </div>
+                      {pdfDuplicates.evidence_preview && (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                          <span className="text-slate-500 text-xs">Evidence detected: </span>
+                          <span className="text-xs font-medium">
+                            {pdfDuplicates.evidence_preview.map(e => `${e.type} (${e.pages?.length || 1} pages)`).join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                <Card className="border-amber-200 bg-amber-50/50">
+                  <CardContent className="pt-4">
+                    <p className="text-sm font-medium text-slate-700 mb-3">
+                      Matches {pdfDuplicates.duplicates?.length || 0} existing candidate(s):
+                    </p>
+                    
+                    <div className="space-y-2">
+                      {pdfDuplicates.duplicates?.map((match) => (
+                        <div 
+                          key={match.candidate_id} 
+                          className={`flex items-center gap-3 p-3 bg-white rounded-lg border cursor-pointer transition-colors ${
+                            selectedPdfMergeTarget === match.candidate_id 
+                              ? 'border-indigo-500 ring-2 ring-indigo-200' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                          onClick={() => setSelectedPdfMergeTarget(match.candidate_id)}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <UserCheck className="w-5 h-5 text-indigo-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{match.candidate_name}</p>
+                            <p className="text-xs text-slate-500">{match.candidate_email}</p>
+                            {match.candidate_phone && (
+                              <p className="text-xs text-slate-400">{match.candidate_phone}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {match.match_reasons?.map((reason, i) => (
+                              <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
+                                reason === 'email_match' ? 'bg-red-100 text-red-700' :
+                                reason === 'phone_match' ? 'bg-orange-100 text-orange-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {reason.replace('_', ' ')}
+                              </span>
+                            ))}
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            match.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {match.confidence}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <div className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
+                  <p className="font-medium mb-2">Choose an action:</p>
+                  <ul className="space-y-1 text-xs text-slate-500">
+                    <li><strong>Merge:</strong> Add evidence from this PDF to the selected existing candidate</li>
+                    <li><strong>Create New:</strong> Create as a separate candidate anyway</li>
+                    <li><strong>Cancel:</strong> Discard upload and review manually</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPdfDuplicateDialog(false);
+                  setPdfDuplicates(null);
+                  setPendingPdfFile(null);
+                  setSelectedPdfMergeTarget(null);
+                  setExtractedInfo(null);
+                }}
+                className="rounded-full"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handlePdfForceCreate}
+                disabled={uploading}
+                className="rounded-full"
+              >
+                {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <UserPlus className="w-4 h-4 mr-2" />
+                Create New
+              </Button>
+              <Button
+                onClick={() => selectedPdfMergeTarget && handlePdfMerge(selectedPdfMergeTarget)}
+                disabled={uploading || !selectedPdfMergeTarget}
+                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
+              >
+                {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <GitMerge className="w-4 h-4 mr-2" />
+                Merge into Selected
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Duplicate Detection Dialog */}
         <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
           <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
