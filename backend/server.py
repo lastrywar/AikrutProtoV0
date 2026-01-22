@@ -582,7 +582,7 @@ Make it professional, detailed, and suitable for attracting qualified candidates
             return result
         else:
             return {"description": response, "requirements": ""}
-    except:
+    except Exception:
         return {"description": response, "requirements": ""}
 
 @api_router.post("/jobs/{job_id}/generate-playbook")
