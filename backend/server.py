@@ -1354,6 +1354,18 @@ async def delete_analysis(analysis_id: str, current_user: dict = Depends(get_cur
         raise HTTPException(status_code=404, detail="Analysis not found")
     return {"message": "Analysis deleted"}
 
+class BulkDeleteRequest(BaseModel):
+    ids: List[str]
+
+@api_router.post("/analysis/bulk-delete")
+async def bulk_delete_analyses(request: BulkDeleteRequest, current_user: dict = Depends(get_current_user)):
+    """Delete multiple analysis results at once"""
+    if not request.ids:
+        raise HTTPException(status_code=400, detail="No IDs provided")
+    
+    result = await db.analyses.delete_many({"id": {"$in": request.ids}})
+    return {"message": f"Deleted {result.deleted_count} analysis result(s)"}
+
 # ==================== SETTINGS ROUTES ====================
 
 @api_router.get("/settings")
