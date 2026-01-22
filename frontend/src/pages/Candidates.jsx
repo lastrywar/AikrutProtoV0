@@ -44,6 +44,16 @@ export const Candidates = () => {
   const [duplicateDecisions, setDuplicateDecisions] = useState({});
   const [processingDuplicates, setProcessingDuplicates] = useState(false);
   
+  // NEW: ZIP upload state
+  const [uploadMode, setUploadMode] = useState('pdf'); // 'pdf' or 'zip'
+  const [zipUploading, setZipUploading] = useState(false);
+  const [zipDuplicates, setZipDuplicates] = useState(null); // For ZIP duplicate warning
+  const [showZipDuplicateDialog, setShowZipDuplicateDialog] = useState(false);
+  const [pendingZipFile, setPendingZipFile] = useState(null);
+  const [mergeMode, setMergeMode] = useState(false); // For merge decision
+  const [selectedMergeTarget, setSelectedMergeTarget] = useState(null);
+  const zipInputRef = useRef(null);
+  
   // Pagination
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
