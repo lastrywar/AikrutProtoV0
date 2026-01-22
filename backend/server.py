@@ -2240,12 +2240,12 @@ Rules:
                     if ev_file["name"].lower().endswith('.pdf'):
                         try:
                             ev_content = parse_pdf(ev_file["content"])
-                        except:
+                        except Exception:
                             ev_content = "[Binary PDF - parsing failed]"
                     else:
                         try:
                             ev_content = ev_file["content"].decode('utf-8', errors='ignore')
-                        except:
+                        except Exception:
                             ev_content = "[Binary content]"
                     
                     evidence_list.append({
