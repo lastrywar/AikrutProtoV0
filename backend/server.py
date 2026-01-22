@@ -179,6 +179,7 @@ class AnalysisResult(BaseModel):
     id: str
     job_id: str
     candidate_id: str
+    candidate_name: Optional[str] = None  # Store name for when candidate is deleted
     final_score: float
     category_scores: List[CategoryScore]
     overall_reasoning: str
