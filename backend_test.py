@@ -462,6 +462,238 @@ class TalentAITester:
                 return False
         return success
 
+    # UPDATED UPLOAD-CV ENDPOINT TESTS
+    def create_sample_pdf_content(self):
+        """Create a simple PDF-like content for testing"""
+        return b"""%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+>>
+endobj
+
+4 0 obj
+<<
+/Length 44
+>>
+stream
+BT
+/F1 12 Tf
+72 720 Td
+(John Smith) Tj
+0 -20 Td
+(john.smith@email.com) Tj
+0 -20 Td
+(+1-555-123-4567) Tj
+0 -20 Td
+(Software Engineer with 5 years experience) Tj
+ET
+endstream
+endobj
+
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000206 00000 n 
+trailer
+<<
+/Size 5
+/Root 1 0 R
+>>
+startxref
+299
+%%EOF"""
+
+    def test_upload_cv_first_time(self):
+        """Test 1: Upload CV - First time (no duplicates)"""
+        pdf_content = self.create_sample_pdf_content()
+        
+        success, response = self.run_test(
+            "Upload CV - First Time",
+            "POST",
+            "candidates/upload-cv",
+            200,
+            data={},
+            files={"file": ("john_smith_cv.pdf", pdf_content, "application/pdf")}
+        )
+        
+        if success:
+            # Check response structure
+            expected_fields = ['status', 'candidate', 'evidence_added', 'evidence_types']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'created':
+                    self.first_upload_candidate_id = response['candidate']['id']
+                    print(f"   Created candidate ID: {self.first_upload_candidate_id}")
+                    print(f"   Evidence added: {response['evidence_added']}")
+                    print(f"   Evidence types: {response['evidence_types']}")
+                    return True
+                else:
+                    self.log_result("Upload CV - First Time", False, f"Expected status 'created', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Upload CV - First Time", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_upload_cv_duplicate_detection(self):
+        """Test 2: Upload same CV again (duplicate detection)"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Upload CV - Duplicate Detection", False, "First upload test must run first")
+            return False
+            
+        pdf_content = self.create_sample_pdf_content()
+        
+        success, response = self.run_test(
+            "Upload CV - Duplicate Detection",
+            "POST",
+            "candidates/upload-cv",
+            200,
+            data={},
+            files={"file": ("john_smith_cv_duplicate.pdf", pdf_content, "application/pdf")}
+        )
+        
+        if success:
+            expected_fields = ['status', 'duplicates', 'extracted_info', 'evidence_preview']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'duplicate_warning':
+                    duplicates = response['duplicates']
+                    if len(duplicates) > 0:
+                        print(f"   Found {len(duplicates)} duplicate(s)")
+                        print(f"   Extracted info: {response['extracted_info']}")
+                        print(f"   Evidence preview: {response['evidence_preview']}")
+                        return True
+                    else:
+                        self.log_result("Upload CV - Duplicate Detection", False, "No duplicates found when expected")
+                        return False
+                else:
+                    self.log_result("Upload CV - Duplicate Detection", False, f"Expected status 'duplicate_warning', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Upload CV - Duplicate Detection", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_upload_cv_force_create(self):
+        """Test 3: Force create despite duplicate"""
+        pdf_content = self.create_sample_pdf_content()
+        
+        success, response = self.run_test(
+            "Upload CV - Force Create",
+            "POST",
+            "candidates/upload-cv",
+            200,
+            data={"force_create": "true"},
+            files={"file": ("john_smith_cv_force.pdf", pdf_content, "application/pdf")}
+        )
+        
+        if success:
+            expected_fields = ['status', 'candidate', 'evidence_added', 'evidence_types']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'created':
+                    self.force_created_candidate_id = response['candidate']['id']
+                    print(f"   Force created candidate ID: {self.force_created_candidate_id}")
+                    print(f"   Evidence added: {response['evidence_added']}")
+                    return True
+                else:
+                    self.log_result("Upload CV - Force Create", False, f"Expected status 'created', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Upload CV - Force Create", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_upload_cv_merge_into_existing(self):
+        """Test 4: Merge into existing candidate"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Upload CV - Merge Into Existing", False, "First upload test must run first")
+            return False
+            
+        pdf_content = self.create_sample_pdf_content()
+        
+        success, response = self.run_test(
+            "Upload CV - Merge Into Existing",
+            "POST",
+            "candidates/upload-cv",
+            200,
+            data={"merge_target_id": self.first_upload_candidate_id},
+            files={"file": ("john_smith_additional.pdf", pdf_content, "application/pdf")}
+        )
+        
+        if success:
+            expected_fields = ['status', 'candidate', 'evidence_added', 'evidence_types']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'merged':
+                    print(f"   Merged into candidate ID: {response['candidate']['id']}")
+                    print(f"   Evidence added: {response['evidence_added']}")
+                    print(f"   Evidence types: {response['evidence_types']}")
+                    return True
+                else:
+                    self.log_result("Upload CV - Merge Into Existing", False, f"Expected status 'merged', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Upload CV - Merge Into Existing", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_upload_cv_to_existing_candidate(self):
+        """Test 5: Upload to existing candidate (candidate_id)"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Upload CV - To Existing Candidate", False, "First upload test must run first")
+            return False
+            
+        pdf_content = self.create_sample_pdf_content()
+        
+        success, response = self.run_test(
+            "Upload CV - To Existing Candidate",
+            "POST",
+            "candidates/upload-cv",
+            200,
+            data={"candidate_id": self.first_upload_candidate_id},
+            files={"file": ("john_smith_update.pdf", pdf_content, "application/pdf")}
+        )
+        
+        if success:
+            expected_fields = ['status', 'candidate', 'evidence_added', 'evidence_types']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'updated':
+                    print(f"   Updated candidate ID: {response['candidate']['id']}")
+                    print(f"   Evidence added: {response['evidence_added']}")
+                    print(f"   Evidence types: {response['evidence_types']}")
+                    return True
+                else:
+                    self.log_result("Upload CV - To Existing Candidate", False, f"Expected status 'updated', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Upload CV - To Existing Candidate", False, f"Missing fields: {missing}")
+                return False
+        return success
+
     def run_all_tests(self):
         """Run all backend tests"""
         print("🚀 Starting TalentAI Backend API Tests")
