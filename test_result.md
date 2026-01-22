@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the NEW candidate management endpoints that were just added to extend the system"
+user_problem_statement: "Test the UPDATED upload-cv endpoint with the new duplicate detection and evidence splitting features"
 
 backend:
   - task: "POST /api/candidates/detect-duplicates endpoint"
@@ -156,21 +156,78 @@ backend:
           agent: "testing"
           comment: "Fixed route ordering by moving merge-logs endpoint before {candidate_id} route. Now returns proper audit logs with all required fields."
 
+  - task: "POST /api/candidates/upload-cv endpoint - First time upload (no duplicates)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested first-time CV upload. Returns status 'created', creates candidate with extracted contact info (name, email, phone), splits PDF into evidence types, and returns evidence_added count and evidence_types array. Evidence splitting working correctly - PDF classified as 'cv' type."
+
+  - task: "POST /api/candidates/upload-cv endpoint - Duplicate detection"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested duplicate detection when uploading same CV. Returns status 'duplicate_warning' with duplicates list containing match details, extracted_info with parsed contact information, and evidence_preview showing evidence types and pages. Duplicate matching working correctly based on email/phone/name."
+
+  - task: "POST /api/candidates/upload-cv endpoint - Force create despite duplicate"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested force_create=true parameter. Creates new candidate despite duplicates being detected. Returns status 'created' with new candidate ID and evidence details. Force creation bypasses duplicate warnings as expected."
+
+  - task: "POST /api/candidates/upload-cv endpoint - Merge into existing candidate"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested merge_target_id parameter. Merges evidence from uploaded CV into existing candidate. Returns status 'merged' with updated candidate details, evidence_added count, and evidence_types array. Creates merge log entry for audit trail."
+
+  - task: "POST /api/candidates/upload-cv endpoint - Upload to existing candidate"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested candidate_id parameter. Adds evidence to existing candidate without duplicate checking. Returns status 'updated' with candidate details, evidence_added count, and evidence_types array. Evidence appending working correctly."
+
 frontend:
   # No frontend testing required for this task
 
 metadata:
   created_by: "testing_agent"
-  version: "1.0"
-  test_sequence: 1
+  version: "1.1"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
   current_focus:
-    - "POST /api/candidates/detect-duplicates endpoint"
-    - "POST /api/candidates/upload-zip endpoint"
-    - "POST /api/candidates/merge endpoint"
-    - "GET /api/candidates/merge-logs endpoint"
+    - "POST /api/candidates/upload-cv endpoint - All scenarios tested"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -178,3 +235,5 @@ test_plan:
 agent_communication:
     - agent: "testing"
       message: "Completed comprehensive testing of all NEW candidate management endpoints. All endpoints are working correctly. Fixed one route ordering issue with merge-logs endpoint. All tests passing (21/21)."
+    - agent: "testing"
+      message: "UPDATED: Completed comprehensive testing of the UPDATED upload-cv endpoint with new duplicate detection and evidence splitting features. All 5 test scenarios passed successfully: 1) First time upload (creates candidate with evidence splitting), 2) Duplicate detection (returns warning with duplicates list), 3) Force create (bypasses duplicates), 4) Merge into existing (adds evidence to target candidate), 5) Upload to existing candidate (appends evidence). All backend tests passing (26/26). Contact extraction, evidence splitting, duplicate detection, and merge functionality all working correctly."
