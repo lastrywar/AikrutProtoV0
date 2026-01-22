@@ -1322,44 +1322,6 @@ Return JSON:
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
     )
 
-# Candidate search/pagination endpoint
-@api_router.get("/candidates/search")
-async def search_candidates(
-    q: str = Query("", description="Search query"),
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    current_user: dict = Depends(get_current_user)
-):
-    """Search and paginate candidates"""
-    if not current_user.get("company_id"):
-        return {"candidates": [], "total": 0, "page": page, "pages": 0}
-    
-    company_id = current_user["company_id"]
-    
-    # Build search query
-    query = {"company_id": company_id}
-    if q.strip():
-        query["$or"] = [
-            {"name": {"$regex": q, "$options": "i"}},
-            {"email": {"$regex": q, "$options": "i"}}
-        ]
-    
-    # Get total count
-    total = await db.candidates.count_documents(query)
-    pages = (total + limit - 1) // limit
-    
-    # Get paginated results
-    skip = (page - 1) * limit
-    candidates = await db.candidates.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
-    
-    return {
-        "candidates": candidates,
-        "total": total,
-        "page": page,
-        "pages": pages,
-        "limit": limit
-    }
-
 @api_router.post("/candidates/check-duplicates")
 async def check_duplicate_candidates(
     emails: List[str] = [],
