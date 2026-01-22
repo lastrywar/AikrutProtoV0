@@ -121,6 +121,7 @@ export const analysisAPI = {
   },
   get: (id) => api.get(`/analysis/${id}`),
   delete: (id) => api.delete(`/analysis/${id}`),
+  bulkDelete: (ids) => api.post('/analysis/bulk-delete', { ids }),
 };
 
 // Settings API
