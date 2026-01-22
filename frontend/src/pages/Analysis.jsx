@@ -609,8 +609,8 @@ export const Analysis = () => {
 
       {/* Detail Modal */}
       <Dialog open={!!detailModalResult} onOpenChange={() => setDetailModalResult(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle className="font-heading flex items-center gap-3">
               <ScoreRing score={detailModalResult?.final_score || 0} size={48} strokeWidth={5} />
               <div>
@@ -622,7 +622,7 @@ export const Analysis = () => {
             </DialogTitle>
           </DialogHeader>
           
-          <ScrollArea className="flex-1 pr-4">
+          <div className="flex-1 overflow-y-auto pr-2">
             {detailModalResult && (
               <Tabs defaultValue="overview" className="w-full">
                 <TabsList className="bg-slate-100 p-1 rounded-full mb-4">
