@@ -1056,6 +1056,7 @@ Ensure you evaluate ALL items in each category of the playbook. Do not skip any.
                 "id": analysis_id,
                 "job_id": request.job_id,
                 "candidate_id": candidate_id,
+                "candidate_name": candidate["name"],  # Store name for reference
                 "final_score": final_score,
                 "category_scores": [cs.model_dump() for cs in category_scores],
                 "overall_reasoning": analysis_data.get("overall_reasoning", ""),
