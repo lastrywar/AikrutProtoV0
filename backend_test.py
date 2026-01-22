@@ -297,6 +297,171 @@ class TalentAITester:
         )
         return success
 
+    # NEW CANDIDATE MANAGEMENT ENDPOINTS TESTS
+    def test_detect_duplicates_no_match(self):
+        """Test detect duplicates with no matches"""
+        success, response = self.run_test(
+            "Detect Duplicates - No Match",
+            "POST",
+            "candidates/detect-duplicates",
+            200,
+            data={
+                "email": "unique.email@example.com",
+                "phone": "+9999999999",
+                "name": "Unique Person"
+            }
+        )
+        
+        if success and 'has_duplicates' in response:
+            if response['has_duplicates'] == False and len(response.get('matches', [])) == 0:
+                return True
+            else:
+                self.log_result("Detect Duplicates - No Match", False, f"Expected no duplicates but got: {response}")
+                return False
+        return success
+
+    def test_detect_duplicates_email_match(self):
+        """Test detect duplicates with email match"""
+        # First create a candidate to match against
+        if not self.candidate_id:
+            self.log_result("Detect Duplicates - Email Match", False, "No candidate created yet")
+            return False
+            
+        success, response = self.run_test(
+            "Detect Duplicates - Email Match",
+            "POST",
+            "candidates/detect-duplicates",
+            200,
+            data={
+                "email": "john.doe@example.com",  # Same as created candidate
+                "phone": "+9876543210",
+                "name": "Different Name"
+            }
+        )
+        
+        if success and 'has_duplicates' in response:
+            if response['has_duplicates'] == True and len(response.get('matches', [])) > 0:
+                match = response['matches'][0]
+                if 'email_match' in match.get('match_reasons', []):
+                    return True
+                else:
+                    self.log_result("Detect Duplicates - Email Match", False, f"Expected email_match in reasons but got: {match.get('match_reasons', [])}")
+                    return False
+            else:
+                self.log_result("Detect Duplicates - Email Match", False, f"Expected duplicates but got: {response}")
+                return False
+        return success
+
+    def test_detect_duplicates_phone_match(self):
+        """Test detect duplicates with phone match"""
+        if not self.candidate_id:
+            self.log_result("Detect Duplicates - Phone Match", False, "No candidate created yet")
+            return False
+            
+        success, response = self.run_test(
+            "Detect Duplicates - Phone Match",
+            "POST",
+            "candidates/detect-duplicates",
+            200,
+            data={
+                "email": "different.email@example.com",
+                "phone": "1234567890",  # Same as created candidate (normalized)
+                "name": "Different Name"
+            }
+        )
+        
+        if success and 'has_duplicates' in response:
+            if response['has_duplicates'] == True and len(response.get('matches', [])) > 0:
+                match = response['matches'][0]
+                if 'phone_match' in match.get('match_reasons', []):
+                    return True
+                else:
+                    self.log_result("Detect Duplicates - Phone Match", False, f"Expected phone_match in reasons but got: {match.get('match_reasons', [])}")
+                    return False
+            else:
+                self.log_result("Detect Duplicates - Phone Match", False, f"Expected duplicates but got: {response}")
+                return False
+        return success
+
+    def test_upload_zip_error_handling(self):
+        """Test upload ZIP without actual ZIP file (error handling)"""
+        # Test with non-ZIP file to verify error handling
+        success, response = self.run_test(
+            "Upload ZIP - Error Handling",
+            "POST",
+            "candidates/upload-zip",
+            400,  # Expecting 400 error for non-ZIP
+            data={"force_create": "false"},
+            files={"file": ("test.txt", "This is not a ZIP file", "text/plain")}
+        )
+        return success
+
+    def test_merge_candidates(self):
+        """Test merge candidates endpoint"""
+        # Create a second candidate to merge
+        success, response = self.run_test(
+            "Create Second Candidate for Merge",
+            "POST",
+            "candidates",
+            200,
+            data={
+                "name": "Jane Smith",
+                "email": "jane.smith@example.com",
+                "phone": "+9876543210"
+            }
+        )
+        
+        if not success or 'id' not in response:
+            self.log_result("Merge Candidates", False, "Failed to create second candidate")
+            return False
+            
+        second_candidate_id = response['id']
+        
+        # Now test merge
+        success, response = self.run_test(
+            "Merge Candidates",
+            "POST",
+            "candidates/merge",
+            200,
+            data={
+                "source_candidate_id": second_candidate_id,
+                "target_candidate_id": self.candidate_id
+            }
+        )
+        
+        if success and 'message' in response and 'evidence_transferred' in response:
+            if response['message'] == "Candidates merged successfully":
+                return True
+            else:
+                self.log_result("Merge Candidates", False, f"Unexpected message: {response.get('message')}")
+                return False
+        return success
+
+    def test_merge_logs(self):
+        """Test get merge logs endpoint"""
+        success, response = self.run_test(
+            "Get Merge Logs",
+            "GET",
+            "candidates/merge-logs",
+            200
+        )
+        
+        if success and isinstance(response, list):
+            # Should have at least one log entry from the merge test
+            if len(response) >= 1:
+                log_entry = response[0]
+                required_fields = ['action', 'source_id', 'target_id', 'merged_at', 'merged_by']
+                if all(field in log_entry for field in required_fields):
+                    return True
+                else:
+                    missing_fields = [field for field in required_fields if field not in log_entry]
+                    self.log_result("Get Merge Logs", False, f"Missing fields in log entry: {missing_fields}")
+                    return False
+            else:
+                self.log_result("Get Merge Logs", False, "No merge logs found after merge operation")
+                return False
+        return success
+
     def run_all_tests(self):
         """Run all backend tests"""
         print("🚀 Starting TalentAI Backend API Tests")
