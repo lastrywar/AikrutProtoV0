@@ -80,6 +80,7 @@ export const candidatesAPI = {
   update: (id, data) => api.put(`/candidates/${id}`, data),
   delete: (id) => api.delete(`/candidates/${id}`),
   reparse: (id) => api.post(`/candidates/${id}/reparse`),
+  checkDuplicates: (emails) => api.post('/candidates/check-duplicates', emails),
   uploadCV: (file, candidateId = null) => {
     const formData = new FormData();
     formData.append('file', file);
