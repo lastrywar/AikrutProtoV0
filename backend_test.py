@@ -500,6 +500,15 @@ class TalentAITester:
         self.test_create_candidate()
         self.test_list_candidates()
         
+        # NEW Candidate Management Tests
+        print("\n🔍 NEW Candidate Management Tests")
+        self.test_detect_duplicates_no_match()
+        self.test_detect_duplicates_email_match()
+        self.test_detect_duplicates_phone_match()
+        self.test_upload_zip_error_handling()
+        self.test_merge_candidates()
+        self.test_merge_logs()
+        
         # Settings Tests
         print("\n⚙️ Settings Tests")
         self.test_get_settings()
