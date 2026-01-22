@@ -1408,6 +1408,125 @@ async def upload_evidence(
         "evidence_types": [e["type"] for e in evidence_to_add]
     }
 
+@api_router.delete("/candidates/{candidate_id}/evidence/{evidence_index}")
+async def delete_evidence(
+    candidate_id: str,
+    evidence_index: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a specific evidence item from a candidate by its index.
+    """
+    candidate = await db.candidates.find_one(
+        {"id": candidate_id, "company_id": current_user.get("company_id")},
+        {"_id": 0}
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    evidence_list = candidate.get("evidence", [])
+    
+    if evidence_index < 0 or evidence_index >= len(evidence_list):
+        raise HTTPException(status_code=400, detail="Invalid evidence index")
+    
+    # Remove the evidence at the specified index
+    deleted_evidence = evidence_list[evidence_index]
+    evidence_list.pop(evidence_index)
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {
+            "$set": {
+                "evidence": evidence_list,
+                "updated_at": now
+            }
+        }
+    )
+    
+    updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    return {
+        "status": "deleted",
+        "deleted_evidence": {
+            "type": deleted_evidence.get("type"),
+            "file_name": deleted_evidence.get("file_name")
+        },
+        "candidate": CandidateResponse(**updated),
+        "remaining_evidence": len(evidence_list)
+    }
+
+class ReplaceCandidate(BaseModel):
+    old_candidate_id: str
+    new_name: str
+    new_email: str
+    new_phone: str = ""
+    new_evidence: List[Dict] = []
+
+@api_router.post("/candidates/replace")
+async def replace_candidate(
+    data: ReplaceCandidate,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Replace an existing candidate with new data.
+    Deletes the old candidate and creates a new one.
+    Used for bulk duplicate handling when user chooses 'Replace'.
+    """
+    if not current_user.get("company_id"):
+        raise HTTPException(status_code=400, detail="Create a company first")
+    
+    company_id = current_user["company_id"]
+    
+    # Verify old candidate exists
+    old_candidate = await db.candidates.find_one(
+        {"id": data.old_candidate_id, "company_id": company_id},
+        {"_id": 0}
+    )
+    if not old_candidate:
+        raise HTTPException(status_code=404, detail="Candidate to replace not found")
+    
+    # Delete old candidate
+    await db.candidates.delete_one({"id": data.old_candidate_id})
+    
+    # Create new candidate
+    now = datetime.now(timezone.utc).isoformat()
+    new_candidate_id = str(uuid.uuid4())
+    
+    new_candidate = {
+        "id": new_candidate_id,
+        "company_id": company_id,
+        "name": data.new_name,
+        "email": data.new_email,
+        "phone": data.new_phone,
+        "evidence": data.new_evidence,
+        "created_at": now,
+        "updated_at": now,
+        "replaced_from": data.old_candidate_id
+    }
+    
+    await db.candidates.insert_one(new_candidate)
+    
+    # Log the replacement
+    replace_log = {
+        "id": str(uuid.uuid4()),
+        "action": "candidate_replace",
+        "old_candidate_id": data.old_candidate_id,
+        "old_candidate_name": old_candidate.get("name", ""),
+        "new_candidate_id": new_candidate_id,
+        "new_candidate_name": data.new_name,
+        "replaced_by": current_user["id"],
+        "company_id": company_id,
+        "replaced_at": now
+    }
+    await db.merge_logs.insert_one(replace_log)
+    
+    return {
+        "status": "replaced",
+        "old_candidate_id": data.old_candidate_id,
+        "new_candidate": CandidateResponse(**new_candidate)
+    }
+
 # ==================== ANALYSIS ROUTES ====================
 
 @api_router.post("/analysis/run", response_model=List[AnalysisResult])
