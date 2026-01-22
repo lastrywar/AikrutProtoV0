@@ -819,7 +819,7 @@ export const Analysis = () => {
                 </TabsContent>
               </Tabs>
             )}
-          </ScrollArea>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
