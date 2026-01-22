@@ -13,7 +13,7 @@ import { jobsAPI, candidatesAPI, analysisAPI } from '../lib/api';
 import { 
   BarChart3, Play, Loader2, ChevronDown, ChevronUp, Users, Target, Wrench, 
   Search, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
-  Star, TrendingUp, TrendingDown, FileText, Heart
+  Star, TrendingUp, TrendingDown, FileText, Heart, Trash2, UserX
 } from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { ScoreRing, ScoreBadge } from '../components/common/ScoreRing';
@@ -41,14 +41,17 @@ export const Analysis = () => {
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidateData, setCandidateData] = useState({ candidates: [], total: 0, pages: 0 });
   const [selectedCandidates, setSelectedCandidates] = useState([]);
+  const [candidatesMap, setCandidatesMap] = useState({});
   
   // Results
   const [results, setResults] = useState([]);
   const [minScore, setMinScore] = useState(0);
+  const [selectedResults, setSelectedResults] = useState([]);
   
   // Loading states
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState({ current: 0, total: 0, status: '', candidateName: '' });
   
   // Detail view
@@ -57,6 +60,7 @@ export const Analysis = () => {
 
   useEffect(() => {
     loadJobs();
+    loadAllCandidates();
   }, []);
 
   useEffect(() => {
@@ -91,12 +95,22 @@ export const Analysis = () => {
     }
   };
 
+  const loadAllCandidates = async () => {
+    try {
+      const res = await candidatesAPI.list();
+      const map = {};
+      res.data.forEach(c => { map[c.id] = c; });
+      setCandidatesMap(map);
+    } catch (error) {
+      console.error('Failed to load all candidates:', error);
+    }
+  };
+
   const loadCandidates = useCallback(async () => {
     try {
       const res = await candidatesAPI.search(candidateSearch, candidatePage, 15);
       setCandidateData(res.data);
     } catch (error) {
-      // Fallback to regular list if search endpoint not available
       try {
         const res = await candidatesAPI.list();
         setCandidateData({ candidates: res.data, total: res.data.length, pages: 1 });
@@ -110,6 +124,7 @@ export const Analysis = () => {
     try {
       const res = await analysisAPI.getForJob(selectedJob, minScore || null);
       setResults(res.data);
+      setSelectedResults([]);
     } catch (error) {
       console.error('Failed to load results:', error);
     }
@@ -129,6 +144,38 @@ export const Analysis = () => {
       setSelectedCandidates(prev => prev.filter(id => !visibleIds.includes(id)));
     } else {
       setSelectedCandidates(prev => [...new Set([...prev, ...visibleIds])]);
+    }
+  };
+
+  const toggleResultSelection = (id) => {
+    setSelectedResults(prev =>
+      prev.includes(id) ? prev.filter(r => r !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllResults = () => {
+    if (selectedResults.length === results.length) {
+      setSelectedResults([]);
+    } else {
+      setSelectedResults(results.map(r => r.id));
+    }
+  };
+
+  const handleBulkDeleteResults = async () => {
+    if (selectedResults.length === 0) return;
+    
+    if (!window.confirm(`Delete ${selectedResults.length} analysis result(s)? This cannot be undone.`)) return;
+    
+    setDeleting(true);
+    try {
+      await analysisAPI.bulkDelete(selectedResults);
+      toast.success(`Deleted ${selectedResults.length} result(s)`);
+      setSelectedResults([]);
+      loadResults();
+    } catch (error) {
+      toast.error('Failed to delete results');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -207,12 +254,25 @@ export const Analysis = () => {
       setAnalyzing(false);
       setSelectedCandidates([]);
       loadResults();
+      loadAllCandidates();
     }
   };
 
-  const getCandidateName = (candidateId) => {
-    const candidate = candidateData.candidates.find(c => c.id === candidateId);
-    return candidate?.name || 'Unknown';
+  const getCandidateName = (result) => {
+    // First try to get from candidatesMap (live data)
+    const candidate = candidatesMap[result.candidate_id];
+    if (candidate) {
+      return candidate.name;
+    }
+    // Fall back to stored candidate_name
+    if (result.candidate_name) {
+      return `[Deleted] ${result.candidate_name}`;
+    }
+    return '[Deleted] Unknown';
+  };
+
+  const isCandidateDeleted = (result) => {
+    return !candidatesMap[result.candidate_id];
   };
 
   const getCategoryIcon = (category) => {
@@ -284,7 +344,6 @@ export const Analysis = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
-                {/* Search */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <Input
@@ -299,7 +358,6 @@ export const Analysis = () => {
                   />
                 </div>
 
-                {/* Select All Button */}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -312,7 +370,6 @@ export const Analysis = () => {
                     : 'Select All Visible'}
                 </Button>
 
-                {/* Candidate List */}
                 <ScrollArea className="h-[280px]">
                   {candidateData.candidates.length === 0 ? (
                     <p className="text-sm text-slate-500 text-center py-4">No candidates found</p>
@@ -346,7 +403,6 @@ export const Analysis = () => {
                   )}
                 </ScrollArea>
 
-                {/* Pagination */}
                 {candidateData.pages > 1 && (
                   <div className="flex items-center justify-between pt-2 border-t">
                     <Button
@@ -456,15 +512,50 @@ export const Analysis = () => {
           <div className="lg:col-span-2">
             <Card className="border-slate-100 shadow-soft h-full">
               <CardHeader>
-                <CardTitle className="font-heading flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-indigo-500" />
-                  Analysis Results
-                </CardTitle>
-                <CardDescription>
-                  {results.length > 0 
-                    ? `${results.length} candidate(s) scored${minScore > 0 ? ` (≥${minScore}%)` : ''}`
-                    : 'Select candidates and run analysis'}
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="font-heading flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-indigo-500" />
+                      Analysis Results
+                    </CardTitle>
+                    <CardDescription>
+                      {results.length > 0 
+                        ? `${results.length} candidate(s) scored${minScore > 0 ? ` (≥${minScore}%)` : ''}`
+                        : 'Select candidates and run analysis'}
+                    </CardDescription>
+                  </div>
+                  
+                  {/* Bulk Actions */}
+                  {results.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={selectAllResults}
+                        className="text-slate-600"
+                      >
+                        {selectedResults.length === results.length ? 'Deselect All' : 'Select All'}
+                      </Button>
+                      {selectedResults.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleBulkDeleteResults}
+                          disabled={deleting}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          data-testid="bulk-delete-btn"
+                        >
+                          {deleting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-4 h-4 mr-1" />
+                          )}
+                          Delete ({selectedResults.length})
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {results.length === 0 ? (
@@ -475,130 +566,146 @@ export const Analysis = () => {
                   />
                 ) : (
                   <div className="space-y-4">
-                    {results.sort((a, b) => b.final_score - a.final_score).map((result, index) => (
-                      <Collapsible
-                        key={result.id}
-                        open={expandedResult === result.id}
-                        onOpenChange={() => setExpandedResult(expandedResult === result.id ? null : result.id)}
-                      >
-                        <div
-                          className={`rounded-xl border transition-all ${
-                            expandedResult === result.id ? 'border-indigo-200 bg-indigo-50/50' : 'border-slate-100 hover:border-slate-200'
-                          }`}
+                    {results.sort((a, b) => b.final_score - a.final_score).map((result, index) => {
+                      const isDeleted = isCandidateDeleted(result);
+                      
+                      return (
+                        <Collapsible
+                          key={result.id}
+                          open={expandedResult === result.id}
+                          onOpenChange={() => setExpandedResult(expandedResult === result.id ? null : result.id)}
                         >
-                          <CollapsibleTrigger asChild>
-                            <div
-                              className="p-4 cursor-pointer"
-                              data-testid={`result-${result.id}`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                  <div className="font-semibold text-lg text-slate-400 w-8">
-                                    #{index + 1}
-                                  </div>
-                                  <ScoreRing score={result.final_score} size={56} strokeWidth={5} />
-                                  <div>
-                                    <p className="font-heading font-semibold text-slate-900">
-                                      {getCandidateName(result.candidate_id)}
-                                    </p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <ScoreBadge score={result.final_score} />
-                                      {result.final_score >= minScore && minScore > 0 && (
-                                        <span className="badge-success text-xs">
-                                          <CheckCircle className="w-3 h-3 mr-1 inline" />
-                                          Shortlisted
-                                        </span>
-                                      )}
+                          <div
+                            className={`rounded-xl border transition-all ${
+                              expandedResult === result.id 
+                                ? 'border-indigo-200 bg-indigo-50/50' 
+                                : isDeleted 
+                                  ? 'border-red-100 bg-red-50/30'
+                                  : 'border-slate-100 hover:border-slate-200'
+                            }`}
+                          >
+                            <CollapsibleTrigger asChild>
+                              <div
+                                className="p-4 cursor-pointer"
+                                data-testid={`result-${result.id}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-4">
+                                    {/* Selection Checkbox */}
+                                    <Checkbox
+                                      checked={selectedResults.includes(result.id)}
+                                      onCheckedChange={(e) => {
+                                        e.stopPropagation?.();
+                                        toggleResultSelection(result.id);
+                                      }}
+                                      onClick={(e) => e.stopPropagation()}
+                                    />
+                                    
+                                    <div className="font-semibold text-lg text-slate-400 w-8">
+                                      #{index + 1}
+                                    </div>
+                                    <ScoreRing score={result.final_score} size={56} strokeWidth={5} />
+                                    <div>
+                                      <p className="font-heading font-semibold text-slate-900 flex items-center gap-2">
+                                        {isDeleted && <UserX className="w-4 h-4 text-red-500" />}
+                                        {getCandidateName(result)}
+                                      </p>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <ScoreBadge score={result.final_score} />
+                                        {result.final_score >= minScore && minScore > 0 && (
+                                          <span className="badge-success text-xs">
+                                            <CheckCircle className="w-3 h-3 mr-1 inline" />
+                                            Shortlisted
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </div>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setDetailModalResult(result);
+                                      }}
+                                      className="text-indigo-600"
+                                    >
+                                      View Details
+                                    </Button>
+                                    {expandedResult === result.id ? (
+                                      <ChevronUp className="w-5 h-5 text-slate-400" />
+                                    ) : (
+                                      <ChevronDown className="w-5 h-5 text-slate-400" />
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setDetailModalResult(result);
-                                    }}
-                                    className="text-indigo-600"
-                                  >
-                                    View Details
-                                  </Button>
-                                  {expandedResult === result.id ? (
-                                    <ChevronUp className="w-5 h-5 text-slate-400" />
-                                  ) : (
-                                    <ChevronDown className="w-5 h-5 text-slate-400" />
+                              </div>
+                            </CollapsibleTrigger>
+                            
+                            <CollapsibleContent>
+                              <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-100">
+                                {result.overall_reasoning && (
+                                  <div className="pt-4">
+                                    <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
+                                    <p className="text-sm text-slate-600 bg-white p-3 rounded-lg">
+                                      {result.overall_reasoning}
+                                    </p>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-4">
+                                  {result.strengths?.length > 0 && (
+                                    <div className="bg-green-50 rounded-lg p-3">
+                                      <p className="text-xs font-medium text-green-700 mb-2 flex items-center gap-1">
+                                        <TrendingUp className="w-3 h-3" /> Strengths
+                                      </p>
+                                      <ul className="text-xs text-green-700 space-y-1">
+                                        {result.strengths.map((s, i) => (
+                                          <li key={i}>• {s}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  {result.gaps?.length > 0 && (
+                                    <div className="bg-amber-50 rounded-lg p-3">
+                                      <p className="text-xs font-medium text-amber-700 mb-2 flex items-center gap-1">
+                                        <TrendingDown className="w-3 h-3" /> Gaps
+                                      </p>
+                                      <ul className="text-xs text-amber-700 space-y-1">
+                                        {result.gaps.map((g, i) => (
+                                          <li key={i}>• {g}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-                            </div>
-                          </CollapsibleTrigger>
-                          
-                          <CollapsibleContent>
-                            <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-100">
-                              {/* Quick Summary */}
-                              {result.overall_reasoning && (
-                                <div className="pt-4">
-                                  <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
-                                  <p className="text-sm text-slate-600 bg-white p-3 rounded-lg">
-                                    {result.overall_reasoning}
-                                  </p>
-                                </div>
-                              )}
-
-                              {/* Strengths & Gaps */}
-                              <div className="grid grid-cols-2 gap-4">
-                                {result.strengths?.length > 0 && (
-                                  <div className="bg-green-50 rounded-lg p-3">
-                                    <p className="text-xs font-medium text-green-700 mb-2 flex items-center gap-1">
-                                      <TrendingUp className="w-3 h-3" /> Strengths
-                                    </p>
-                                    <ul className="text-xs text-green-700 space-y-1">
-                                      {result.strengths.map((s, i) => (
-                                        <li key={i}>• {s}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {result.gaps?.length > 0 && (
-                                  <div className="bg-amber-50 rounded-lg p-3">
-                                    <p className="text-xs font-medium text-amber-700 mb-2 flex items-center gap-1">
-                                      <TrendingDown className="w-3 h-3" /> Gaps
-                                    </p>
-                                    <ul className="text-xs text-amber-700 space-y-1">
-                                      {result.gaps.map((g, i) => (
-                                        <li key={i}>• {g}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              {/* Category Overview */}
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                {result.category_scores?.map(cat => {
-                                  const Icon = getCategoryIcon(cat.category);
-                                  return (
-                                    <div key={cat.category} className="bg-white rounded-lg p-3 border border-slate-100">
-                                      <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                          <Icon className="w-4 h-4 text-indigo-500" />
-                                          <span className="font-medium capitalize text-sm">{cat.category}</span>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                  {result.category_scores?.map(cat => {
+                                    const Icon = getCategoryIcon(cat.category);
+                                    return (
+                                      <div key={cat.category} className="bg-white rounded-lg p-3 border border-slate-100">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <Icon className="w-4 h-4 text-indigo-500" />
+                                            <span className="font-medium capitalize text-sm">{cat.category}</span>
+                                          </div>
+                                          <span className={`font-bold ${getScoreColor(cat.score)}`}>
+                                            {Math.round(cat.score)}
+                                          </span>
                                         </div>
-                                        <span className={`font-bold ${getScoreColor(cat.score)}`}>
-                                          {Math.round(cat.score)}
-                                        </span>
+                                        <Progress value={cat.score} className="h-1.5" />
                                       </div>
-                                      <Progress value={cat.score} className="h-1.5" />
-                                    </div>
-                                  );
-                                })}
+                                    );
+                                  })}
+                                </div>
                               </div>
-                            </div>
-                          </CollapsibleContent>
-                        </div>
-                      </Collapsible>
-                    ))}
+                            </CollapsibleContent>
+                          </div>
+                        </Collapsible>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -614,7 +721,12 @@ export const Analysis = () => {
             <DialogTitle className="font-heading flex items-center gap-3">
               <ScoreRing score={detailModalResult?.final_score || 0} size={48} strokeWidth={5} />
               <div>
-                <span>{getCandidateName(detailModalResult?.candidate_id)}</span>
+                <span className="flex items-center gap-2">
+                  {detailModalResult && isCandidateDeleted(detailModalResult) && (
+                    <UserX className="w-5 h-5 text-red-500" />
+                  )}
+                  {detailModalResult && getCandidateName(detailModalResult)}
+                </span>
                 <p className="text-sm font-normal text-slate-500">
                   Detailed Analysis Report
                 </p>
@@ -744,7 +856,6 @@ export const Analysis = () => {
                           );
                         })}
 
-                        {/* Show missing playbook items */}
                         {playbookItems
                           .filter(p => !catData?.breakdown?.find(b => b.item_id === p.id))
                           .map(item => (
