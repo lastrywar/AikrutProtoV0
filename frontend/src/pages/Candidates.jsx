@@ -257,22 +257,6 @@ export const Candidates = () => {
       await handlePdfUploadsWithDuplicateDetection(files);
     }
   };
-      for (const file of files) {
-        await candidatesAPI.uploadCV(file, candidateId);
-        toast.success(`Uploaded ${file.name}`);
-      }
-      loadCandidates();
-      setShowUploadDialog(false);
-      setSelectedCandidate(null);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Upload failed');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    }
-  };
 
   const handleDuplicateDecision = (newCandidateId, action, mergeTargetId = null) => {
     setDuplicateDecisions(prev => ({
