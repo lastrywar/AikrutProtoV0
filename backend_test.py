@@ -931,6 +931,13 @@ startxref
         self.test_upload_cv_merge_into_existing()
         self.test_upload_cv_to_existing_candidate()
         
+        # NEW Evidence CRUD and Replace Endpoint Tests
+        print("\n🗑️ NEW Evidence CRUD and Replace Endpoint Tests")
+        self.test_delete_evidence()
+        self.test_delete_evidence_invalid_index()
+        self.test_replace_candidate()
+        self.test_replace_candidate_nonexistent()
+        
         # Settings Tests
         print("\n⚙️ Settings Tests")
         self.test_get_settings()
