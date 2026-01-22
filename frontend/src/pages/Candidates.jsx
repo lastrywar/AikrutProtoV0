@@ -54,6 +54,9 @@ export const Candidates = () => {
   const [processingBulk, setProcessingBulk] = useState(false);
   const [selectedBulkIndex, setSelectedBulkIndex] = useState(0);
   
+  // Evidence view state
+  const [expandedEvidence, setExpandedEvidence] = useState(null); // Index of expanded evidence
+  
   // Evidence delete state
   const [deletingEvidence, setDeletingEvidence] = useState(null);
   
