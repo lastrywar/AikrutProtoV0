@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the UPDATED upload-cv endpoint with the new duplicate detection and evidence splitting features"
+user_problem_statement: "Test the NEW evidence CRUD and replace endpoints: DELETE /api/candidates/{candidate_id}/evidence/{evidence_index} and POST /api/candidates/replace"
 
 backend:
   - task: "POST /api/candidates/detect-duplicates endpoint"
