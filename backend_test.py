@@ -1,6 +1,7 @@
 import requests
 import sys
 import json
+import re
 from datetime import datetime
 import uuid
 
