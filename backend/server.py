@@ -726,6 +726,25 @@ async def search_candidates(
         "limit": limit
     }
 
+# Merge logs endpoint - MUST be before {candidate_id} route
+@api_router.get("/candidates/merge-logs")
+async def get_merge_logs(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Get merge audit logs for the company.
+    """
+    if not current_user.get("company_id"):
+        return []
+    
+    logs = await db.merge_logs.find(
+        {"company_id": current_user["company_id"]},
+        {"_id": 0}
+    ).sort("merged_at", -1).limit(limit).to_list(limit)
+    
+    return logs
+
 @api_router.get("/candidates/{candidate_id}", response_model=CandidateResponse)
 async def get_candidate(candidate_id: str, current_user: dict = Depends(get_current_user)):
     candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user.get("company_id")}, {"_id": 0})
