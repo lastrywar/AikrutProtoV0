@@ -11,7 +11,7 @@ import { candidatesAPI } from '../lib/api';
 import { 
   Users, Upload, Search, Mail, Phone, FileText, Trash2, Plus, Loader2, 
   Edit, RefreshCw, ChevronLeft, ChevronRight, Eye, Save, User, AlertTriangle,
-  UserPlus, UserCheck
+  UserPlus, UserCheck, FolderArchive, GitMerge, ArrowRight
 } from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { toast } from 'sonner';
