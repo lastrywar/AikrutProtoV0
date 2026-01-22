@@ -107,18 +107,30 @@ export const candidatesAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  // NEW: Enhanced duplicate detection
+  // NEW: Delete specific evidence from candidate
+  deleteEvidence: (candidateId, evidenceIndex) => 
+    api.delete(`/candidates/${candidateId}/evidence/${evidenceIndex}`),
+  // NEW: Replace candidate (delete old, create new)
+  replace: (oldCandidateId, newName, newEmail, newPhone, newEvidence) =>
+    api.post('/candidates/replace', {
+      old_candidate_id: oldCandidateId,
+      new_name: newName,
+      new_email: newEmail,
+      new_phone: newPhone,
+      new_evidence: newEvidence
+    }),
+  // Enhanced duplicate detection
   detectDuplicates: (data) => api.post('/candidates/detect-duplicates', data),
-  // NEW: Merge candidates
+  // Merge candidates
   merge: (sourceCandidateId, targetCandidateId) => 
     api.post('/candidates/merge', { 
       source_candidate_id: sourceCandidateId, 
       target_candidate_id: targetCandidateId 
     }),
-  // NEW: Get merge logs
+  // Get merge logs
   getMergeLogs: (limit = 50) => 
     api.get('/candidates/merge-logs', { params: { limit } }),
-  // NEW: Upload ZIP file
+  // Upload ZIP file
   uploadZip: (file, forceCreate = false) => {
     const formData = new FormData();
     formData.append('file', file);
