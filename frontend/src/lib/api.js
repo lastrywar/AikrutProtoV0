@@ -81,17 +81,25 @@ export const candidatesAPI = {
   delete: (id) => api.delete(`/candidates/${id}`),
   reparse: (id) => api.post(`/candidates/${id}/reparse`),
   checkDuplicates: (emails) => api.post('/candidates/check-duplicates', emails),
-  uploadCV: (file, candidateId = null) => {
+  // Updated: uploadCV now supports duplicate detection and merge
+  uploadCV: (file, candidateId = null, forceCreate = false, mergeTargetId = null) => {
     const formData = new FormData();
     formData.append('file', file);
     if (candidateId) {
       formData.append('candidate_id', candidateId);
     }
+    if (forceCreate) {
+      formData.append('force_create', 'true');
+    }
+    if (mergeTargetId) {
+      formData.append('merge_target_id', mergeTargetId);
+    }
     return api.post('/candidates/upload-cv', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  uploadEvidence: (candidateId, file, evidenceType) => {
+  // Updated: uploadEvidence now supports auto type detection
+  uploadEvidence: (candidateId, file, evidenceType = 'auto') => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('evidence_type', evidenceType);
