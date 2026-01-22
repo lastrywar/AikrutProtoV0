@@ -11,7 +11,8 @@ import { candidatesAPI } from '../lib/api';
 import { 
   Users, Upload, Search, Mail, Phone, FileText, Trash2, Plus, Loader2, 
   Edit, RefreshCw, ChevronLeft, ChevronRight, Eye, Save, User, AlertTriangle,
-  UserPlus, UserCheck, FolderArchive, GitMerge, ArrowRight
+  UserPlus, UserCheck, FolderArchive, GitMerge, ArrowRight, X, CheckCircle2,
+  Replace, Copy
 } from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { toast } from 'sonner';
@@ -37,22 +38,24 @@ export const Candidates = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [reparsing, setReparsing] = useState(false);
   
-  // Duplicate handling
-  const [pendingFiles, setPendingFiles] = useState([]);
-  const [duplicateMatches, setDuplicateMatches] = useState([]);
-  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
-  const [duplicateDecisions, setDuplicateDecisions] = useState({});
-  const [processingDuplicates, setProcessingDuplicates] = useState(false);
-  
-  // NEW: ZIP upload state
-  const [uploadMode, setUploadMode] = useState('pdf'); // 'pdf' or 'zip'
+  // ZIP upload state
+  const [uploadMode, setUploadMode] = useState('pdf');
   const [zipUploading, setZipUploading] = useState(false);
-  const [zipDuplicates, setZipDuplicates] = useState(null); // For ZIP duplicate warning
+  const [zipDuplicates, setZipDuplicates] = useState(null);
   const [showZipDuplicateDialog, setShowZipDuplicateDialog] = useState(false);
   const [pendingZipFile, setPendingZipFile] = useState(null);
-  const [mergeMode, setMergeMode] = useState(false); // For merge decision
   const [selectedMergeTarget, setSelectedMergeTarget] = useState(null);
   const zipInputRef = useRef(null);
+  
+  // BULK DUPLICATE HANDLER STATE
+  const [bulkDuplicates, setBulkDuplicates] = useState([]); // Array of {file, extractedInfo, duplicates, evidence_preview}
+  const [bulkDecisions, setBulkDecisions] = useState({}); // {fileIndex: {action: 'merge'|'create'|'replace', targetId: string}}
+  const [showBulkDuplicateDialog, setShowBulkDuplicateDialog] = useState(false);
+  const [processingBulk, setProcessingBulk] = useState(false);
+  const [selectedBulkIndex, setSelectedBulkIndex] = useState(0);
+  
+  // Evidence delete state
+  const [deletingEvidence, setDeletingEvidence] = useState(null);
   
   // Pagination
   const [page, setPage] = useState(1);
@@ -68,46 +71,31 @@ export const Candidates = () => {
   const loadCandidates = async () => {
     setLoading(true);
     try {
-      const res = await candidatesAPI.search(searchTerm, page, 12);
-      setCandidates(res.data.candidates);
-      setTotalPages(res.data.pages);
-      setTotal(res.data.total);
-    } catch (error) {
-      try {
+      if (searchTerm) {
+        const res = await candidatesAPI.search(searchTerm, page, 20);
+        setCandidates(res.data.candidates || []);
+        setTotalPages(res.data.pages || 1);
+        setTotal(res.data.total || 0);
+      } else {
         const res = await candidatesAPI.list();
-        const filtered = res.data.filter(c =>
-          c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          c.email.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        setCandidates(filtered);
-        setTotal(filtered.length);
-        setTotalPages(1);
-      } catch (e) {
-        console.error('Failed to load candidates:', e);
+        const allCandidates = res.data || [];
+        setCandidates(allCandidates.slice((page - 1) * 20, page * 20));
+        setTotalPages(Math.ceil(allCandidates.length / 20) || 1);
+        setTotal(allCandidates.length);
       }
+    } catch (error) {
+      toast.error('Failed to load candidates');
     } finally {
       setLoading(false);
     }
   };
 
-  const extractEmailFromPDF = async (file) => {
-    // We'll use a simple approach - upload and let backend parse, then check
-    // For now, we'll just return the filename as identifier
-    return file.name;
-  };
-
-  // NEW: State for PDF duplicate handling
-  const [pdfDuplicates, setPdfDuplicates] = useState(null);
-  const [showPdfDuplicateDialog, setShowPdfDuplicateDialog] = useState(false);
-  const [pendingPdfFile, setPendingPdfFile] = useState(null);
-  const [selectedPdfMergeTarget, setSelectedPdfMergeTarget] = useState(null);
-  const [extractedInfo, setExtractedInfo] = useState(null);
-
+  // ==================== BULK PDF UPLOAD WITH DUPLICATE DETECTION ====================
+  
   const handleFileSelect = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
-    // Filter PDF files
     const pdfFiles = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
     if (pdfFiles.length === 0) {
       toast.error('Only PDF files are supported');
@@ -120,63 +108,70 @@ export const Candidates = () => {
       return;
     }
 
-    // For new uploads, process each file with duplicate detection
-    setPendingFiles(pdfFiles);
-    await handlePdfUploadsWithDuplicateDetection(pdfFiles);
+    // Process all files and collect duplicates
+    await processFilesWithDuplicateDetection(pdfFiles);
   };
 
-  // NEW: Handle PDF uploads with duplicate detection
-  const handlePdfUploadsWithDuplicateDetection = async (files) => {
+  const processFilesWithDuplicateDetection = async (files) => {
     setUploading(true);
+    const duplicatesFound = [];
     let successCount = 0;
-    let duplicateCount = 0;
 
     try {
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         try {
-          // Upload without force_create to check for duplicates first
           const res = await candidatesAPI.uploadCV(file, null, false, null);
           
           if (res.data.status === 'duplicate_warning') {
-            // Show duplicate dialog for this file
-            setPdfDuplicates(res.data);
-            setExtractedInfo(res.data.extracted_info);
-            setPendingPdfFile(file);
-            setShowPdfDuplicateDialog(true);
-            duplicateCount++;
-            // Stop processing - user needs to decide
-            break;
+            duplicatesFound.push({
+              file,
+              fileIndex: i,
+              extractedInfo: res.data.extracted_info,
+              duplicates: res.data.duplicates,
+              evidence_preview: res.data.evidence_preview
+            });
           } else if (res.data.status === 'created') {
             successCount++;
             const evidenceTypes = res.data.evidence_types || ['cv'];
-            toast.success(`Uploaded ${file.name}: ${res.data.evidence_added} evidence(s) detected (${evidenceTypes.join(', ')})`);
+            toast.success(`Uploaded ${file.name}: ${res.data.evidence_added} evidence(s) (${evidenceTypes.join(', ')})`);
           }
         } catch (error) {
           toast.error(`Failed to upload ${file.name}: ${error.response?.data?.detail || 'Error'}`);
         }
       }
 
+      // If duplicates found, show bulk handler
+      if (duplicatesFound.length > 0) {
+        setBulkDuplicates(duplicatesFound);
+        // Initialize decisions
+        const decisions = {};
+        duplicatesFound.forEach((d, idx) => {
+          decisions[idx] = { action: null, targetId: null };
+        });
+        setBulkDecisions(decisions);
+        setSelectedBulkIndex(0);
+        setShowBulkDuplicateDialog(true);
+      }
+
       if (successCount > 0) {
         loadCandidates();
       }
       
-      // Only close dialog if no duplicates pending
-      if (duplicateCount === 0) {
+      // Only close upload dialog if no duplicates
+      if (duplicatesFound.length === 0) {
         setShowUploadDialog(false);
-        setSelectedCandidate(null);
       }
     } catch (error) {
       toast.error('Upload failed');
     } finally {
       setUploading(false);
-      setPendingFiles([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     }
   };
 
-  // Upload files to existing candidate (no duplicate check needed)
   const uploadFilesToExisting = async (files, candidateId) => {
     setUploading(true);
     try {
@@ -186,6 +181,11 @@ export const Candidates = () => {
         toast.success(`Uploaded ${file.name}: ${res.data.evidence_added || 1} evidence(s) (${evidenceTypes.join(', ')})`);
       }
       loadCandidates();
+      // Refresh detail candidate if open
+      if (detailCandidate && detailCandidate.id === candidateId) {
+        const updated = await candidatesAPI.get(candidateId);
+        setDetailCandidate(updated.data);
+      }
       setShowUploadDialog(false);
       setSelectedCandidate(null);
     } catch (error) {
@@ -198,116 +198,87 @@ export const Candidates = () => {
     }
   };
 
-  // Handle PDF duplicate - create new anyway
-  const handlePdfForceCreate = async () => {
-    if (!pendingPdfFile) return;
-    
-    setUploading(true);
-    try {
-      const res = await candidatesAPI.uploadCV(pendingPdfFile, null, true, null);
-      const evidenceTypes = res.data.evidence_types || ['cv'];
-      toast.success(`Created new candidate with ${res.data.evidence_added} evidence(s) (${evidenceTypes.join(', ')})`);
-      setShowPdfDuplicateDialog(false);
-      setPdfDuplicates(null);
-      setPendingPdfFile(null);
-      setSelectedPdfMergeTarget(null);
-      setExtractedInfo(null);
-      loadCandidates();
-      setShowUploadDialog(false);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
+  // ==================== BULK DUPLICATE ACTIONS ====================
 
-  // Handle PDF duplicate - merge into existing
-  const handlePdfMerge = async (targetCandidateId) => {
-    if (!pendingPdfFile) return;
-    
-    setUploading(true);
-    try {
-      const res = await candidatesAPI.uploadCV(pendingPdfFile, null, false, targetCandidateId);
-      const evidenceTypes = res.data.evidence_types || [];
-      toast.success(`Merged ${res.data.evidence_added} evidence(s) into existing candidate (${evidenceTypes.join(', ')})`);
-      setShowPdfDuplicateDialog(false);
-      setPdfDuplicates(null);
-      setPendingPdfFile(null);
-      setSelectedPdfMergeTarget(null);
-      setExtractedInfo(null);
-      loadCandidates();
-      setShowUploadDialog(false);
-    } catch (error) {
-      toast.error(error.response?.data?.detail || 'Merge failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Legacy function - kept for backward compatibility with bulk upload
-  const handleBulkUpload = async (files) => {
-    await handlePdfUploadsWithDuplicateDetection(files);
-  };
-
-  // Legacy function - kept for backward compatibility  
-  const uploadFiles = async (files, candidateId = null) => {
-    if (candidateId) {
-      await uploadFilesToExisting(files, candidateId);
-    } else {
-      await handlePdfUploadsWithDuplicateDetection(files);
-    }
-  };
-
-  const handleDuplicateDecision = (newCandidateId, action, mergeTargetId = null) => {
-    setDuplicateDecisions(prev => ({
+  const handleBulkDecision = (index, action, targetId = null) => {
+    setBulkDecisions(prev => ({
       ...prev,
-      [newCandidateId]: { action, mergeTargetId }
+      [index]: { action, targetId }
     }));
   };
 
-  const processDuplicateDecisions = async () => {
-    setProcessingDuplicates(true);
+  const handleBatchAction = (action) => {
+    const newDecisions = { ...bulkDecisions };
+    bulkDuplicates.forEach((dup, idx) => {
+      if (action === 'merge' && dup.duplicates.length > 0) {
+        // Default to first duplicate for merge
+        newDecisions[idx] = { action: 'merge', targetId: dup.duplicates[0].candidate_id };
+      } else if (action === 'create') {
+        newDecisions[idx] = { action: 'create', targetId: null };
+      } else if (action === 'replace' && dup.duplicates.length > 0) {
+        newDecisions[idx] = { action: 'replace', targetId: dup.duplicates[0].candidate_id };
+      }
+    });
+    setBulkDecisions(newDecisions);
+  };
+
+  const processBulkDecisions = async () => {
+    setProcessingBulk(true);
+    let successCount = 0;
+
     try {
-      for (const match of duplicateMatches) {
-        const decision = duplicateDecisions[match.newCandidate.id];
+      for (let i = 0; i < bulkDuplicates.length; i++) {
+        const dup = bulkDuplicates[i];
+        const decision = bulkDecisions[i];
         
-        if (decision.action === 'merge' && decision.mergeTargetId) {
-          // Merge: Add evidence from new candidate to existing, then delete new
-          const newCandidate = match.newCandidate;
-          const targetId = decision.mergeTargetId;
-          
-          // Get the new candidate's evidence and add to target
-          if (newCandidate.evidence && newCandidate.evidence.length > 0) {
-            for (const evidence of newCandidate.evidence) {
-              // We need to re-upload the evidence to the target candidate
-              // Since we can't directly transfer, we'll update via API
-              // For now, we'll just delete the duplicate
+        if (!decision || !decision.action) continue;
+
+        try {
+          if (decision.action === 'create') {
+            // Force create
+            await candidatesAPI.uploadCV(dup.file, null, true, null);
+            successCount++;
+          } else if (decision.action === 'merge' && decision.targetId) {
+            // Merge into existing
+            await candidatesAPI.uploadCV(dup.file, null, false, decision.targetId);
+            successCount++;
+          } else if (decision.action === 'replace' && decision.targetId) {
+            // Replace: First force create, then we need the evidence
+            const createRes = await candidatesAPI.uploadCV(dup.file, null, true, null);
+            if (createRes.data.status === 'created') {
+              // Now merge the new into old, then delete new
+              // Actually, replace means delete old, create new - so we need to delete the old
+              await candidatesAPI.delete(decision.targetId);
+              successCount++;
             }
           }
-          
-          // Delete the duplicate
-          await candidatesAPI.delete(newCandidate.id);
-          toast.success(`Merged and removed duplicate: ${newCandidate.name}`);
-        } else if (decision.action === 'delete') {
-          // Delete the new candidate
-          await candidatesAPI.delete(match.newCandidate.id);
-          toast.success(`Deleted duplicate: ${match.newCandidate.name}`);
+        } catch (error) {
+          toast.error(`Failed to process ${dup.file.name}: ${error.response?.data?.detail || 'Error'}`);
         }
-        // 'keep' action means do nothing - keep both
       }
-      
-      setShowDuplicateDialog(false);
-      setDuplicateMatches([]);
-      setDuplicateDecisions({});
+
+      if (successCount > 0) {
+        toast.success(`Successfully processed ${successCount} candidate(s)`);
+      }
+
+      setShowBulkDuplicateDialog(false);
+      setBulkDuplicates([]);
+      setBulkDecisions({});
+      setShowUploadDialog(false);
       loadCandidates();
     } catch (error) {
       toast.error('Failed to process duplicates');
     } finally {
-      setProcessingDuplicates(false);
+      setProcessingBulk(false);
     }
   };
 
-  // NEW: Handle ZIP file upload
+  const allDecisionsMade = () => {
+    return bulkDuplicates.every((_, idx) => bulkDecisions[idx]?.action);
+  };
+
+  // ==================== ZIP UPLOAD ====================
+
   const handleZipSelect = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -321,11 +292,9 @@ export const Candidates = () => {
     setPendingZipFile(file);
     
     try {
-      // First try without force_create to check for duplicates
       const res = await candidatesAPI.uploadZip(file, false);
       
       if (res.data.status === 'duplicate_warning') {
-        // Show duplicate dialog for ZIP
         setZipDuplicates(res.data);
         setShowZipDuplicateDialog(true);
       } else if (res.data.status === 'created') {
@@ -345,7 +314,6 @@ export const Candidates = () => {
     }
   };
 
-  // NEW: Force create after duplicate warning
   const handleZipForceCreate = async () => {
     if (!pendingZipFile) return;
     
@@ -356,6 +324,7 @@ export const Candidates = () => {
       setShowZipDuplicateDialog(false);
       setZipDuplicates(null);
       setPendingZipFile(null);
+      setSelectedMergeTarget(null);
       loadCandidates();
       setShowUploadDialog(false);
     } catch (error) {
@@ -365,17 +334,14 @@ export const Candidates = () => {
     }
   };
 
-  // NEW: Merge ZIP candidate into existing
   const handleZipMerge = async (targetCandidateId) => {
     if (!pendingZipFile) return;
     
     setZipUploading(true);
     try {
-      // First force create the candidate
       const createRes = await candidatesAPI.uploadZip(pendingZipFile, true);
       
       if (createRes.data.status === 'created' && createRes.data.candidate) {
-        // Then merge into target
         const mergeRes = await candidatesAPI.merge(createRes.data.candidate.id, targetCandidateId);
         toast.success(`Merged into existing candidate. ${mergeRes.data.evidence_transferred} evidence file(s) transferred.`);
       }
@@ -383,6 +349,7 @@ export const Candidates = () => {
       setShowZipDuplicateDialog(false);
       setZipDuplicates(null);
       setPendingZipFile(null);
+      setSelectedMergeTarget(null);
       loadCandidates();
       setShowUploadDialog(false);
     } catch (error) {
@@ -392,66 +359,51 @@ export const Candidates = () => {
     }
   };
 
+  // ==================== EVIDENCE CRUD ====================
+
+  const handleDeleteEvidence = async (candidateId, evidenceIndex, evidenceType) => {
+    if (!confirm(`Are you sure you want to delete this ${evidenceType} evidence?`)) return;
+    
+    setDeletingEvidence(evidenceIndex);
+    try {
+      const res = await candidatesAPI.deleteEvidence(candidateId, evidenceIndex);
+      toast.success(`Deleted ${res.data.deleted_evidence.type} evidence`);
+      
+      // Refresh detail candidate
+      if (detailCandidate && detailCandidate.id === candidateId) {
+        setDetailCandidate(res.data.candidate);
+      }
+      loadCandidates();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to delete evidence');
+    } finally {
+      setDeletingEvidence(null);
+    }
+  };
+
+  // ==================== OTHER HANDLERS ====================
+
   const handleDelete = async (id) => {
-    if (!window.confirm('Delete this candidate?')) return;
+    if (!confirm('Are you sure you want to delete this candidate?')) return;
     
     try {
       await candidatesAPI.delete(id);
       toast.success('Candidate deleted');
-      loadCandidates();
       if (detailCandidate?.id === id) {
         setDetailCandidate(null);
       }
-    } catch (error) {
-      toast.error('Failed to delete');
-    }
-  };
-
-  const openDetail = async (candidate) => {
-    try {
-      const res = await candidatesAPI.get(candidate.id);
-      setDetailCandidate(res.data);
-      setEditForm({
-        name: res.data.name,
-        email: res.data.email,
-        phone: res.data.phone
-      });
-      setEditMode(false);
-    } catch (error) {
-      toast.error('Failed to load candidate details');
-    }
-  };
-
-  const handleSaveEdit = async () => {
-    if (!detailCandidate) return;
-    
-    setSavingEdit(true);
-    try {
-      const res = await candidatesAPI.update(detailCandidate.id, editForm);
-      setDetailCandidate(res.data);
-      setEditMode(false);
-      toast.success('Candidate updated');
       loadCandidates();
     } catch (error) {
-      toast.error('Failed to update candidate');
-    } finally {
-      setSavingEdit(false);
+      toast.error('Failed to delete candidate');
     }
   };
 
-  const handleReparse = async () => {
-    if (!detailCandidate) return;
-    
+  const handleReparse = async (id) => {
     setReparsing(true);
     try {
-      const res = await candidatesAPI.reparse(detailCandidate.id);
+      const res = await candidatesAPI.reparse(id);
+      toast.success('CV re-parsed successfully');
       setDetailCandidate(res.data);
-      setEditForm({
-        name: res.data.name,
-        email: res.data.email,
-        phone: res.data.phone
-      });
-      toast.success('CV re-parsed with AI');
       loadCandidates();
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to re-parse CV');
@@ -460,32 +412,86 @@ export const Candidates = () => {
     }
   };
 
+  const handleEdit = () => {
+    setEditMode(true);
+    setEditForm({
+      name: detailCandidate?.name || '',
+      email: detailCandidate?.email || '',
+      phone: detailCandidate?.phone || ''
+    });
+  };
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true);
+    try {
+      await candidatesAPI.update(detailCandidate.id, editForm);
+      toast.success('Candidate updated');
+      setDetailCandidate({ ...detailCandidate, ...editForm });
+      setEditMode(false);
+      loadCandidates();
+    } catch (error) {
+      toast.error('Failed to update candidate');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const getEvidenceIcon = (type) => {
+    switch (type) {
+      case 'cv': return '📄';
+      case 'certificate': return '🏆';
+      case 'diploma': return '🎓';
+      case 'reference': return '📝';
+      case 'transcript': return '📊';
+      case 'psychotest': return '🧠';
+      case 'knowledge_test': return '📚';
+      default: return '📎';
+    }
+  };
+
+  const getEvidenceColor = (type) => {
+    switch (type) {
+      case 'cv': return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 'certificate': return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'diploma': return 'bg-purple-100 text-purple-700 border-purple-200';
+      case 'reference': return 'bg-green-100 text-green-700 border-green-200';
+      case 'transcript': return 'bg-cyan-100 text-cyan-700 border-cyan-200';
+      case 'psychotest': return 'bg-pink-100 text-pink-700 border-pink-200';
+      case 'knowledge_test': return 'bg-orange-100 text-orange-700 border-orange-200';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  const filteredCandidates = candidates;
+
   return (
-    <div className="min-h-screen" data-testid="candidates-page">
-      <TopBar title="Talent Pool" subtitle="Manage candidate profiles" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <TopBar />
       
       <div className="p-8">
-        {/* Actions Bar */}
-        <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-6">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input
-              value={searchTerm}
-              onChange={(e) => {
-                setSearchTerm(e.target.value);
-                setPage(1);
-              }}
-              placeholder="Search candidates..."
-              className="pl-10"
-              data-testid="search-candidates"
-            />
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-heading font-bold text-slate-900">Talent Pool</h1>
+            <p className="text-slate-500 mt-1">Manage your candidate database</p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">{total} candidates</span>
-            <Button
-              onClick={() => setShowUploadDialog(true)}
-              className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
-              data-testid="upload-cv-btn"
+          
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <Input
+                placeholder="Search candidates..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 w-64 rounded-full border-slate-200"
+              />
+            </div>
+            <Button 
+              onClick={() => {
+                setSelectedCandidate(null);
+                setShowUploadDialog(true);
+              }}
+              className="rounded-full bg-indigo-500 hover:bg-indigo-600 text-white"
             >
               <Upload className="w-4 h-4 mr-2" />
               Upload CVs
@@ -493,116 +499,323 @@ export const Candidates = () => {
           </div>
         </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
-          </div>
-        ) : candidates.length === 0 ? (
-          <Card className="border-slate-100 shadow-soft">
-            <EmptyState
-              icon={Users}
-              title={searchTerm ? 'No candidates found' : 'No candidates yet'}
-              description={searchTerm ? 'Try a different search term' : 'Upload CVs to start building your talent pool.'}
-              actionLabel={!searchTerm ? 'Upload CVs' : undefined}
-              onAction={!searchTerm ? () => setShowUploadDialog(true) : undefined}
-            />
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mb-8">
+          <Card className="bg-white/70 backdrop-blur border-slate-200/50">
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-slate-900">{total}</p>
+                  <p className="text-sm text-slate-500">Total Candidates</p>
+                </div>
+              </div>
+            </CardContent>
           </Card>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {candidates.map((candidate, index) => (
-                <Card
-                  key={candidate.id}
-                  className="border-slate-100 shadow-soft hover:shadow-soft-md transition-all cursor-pointer animate-slide-up"
-                  style={{ animationDelay: `${index * 0.03}s` }}
-                  onClick={() => openDetail(candidate)}
-                  data-testid={`candidate-card-${candidate.id}`}
-                >
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="w-11 h-11 rounded-full bg-indigo-100 flex items-center justify-center">
-                        <span className="text-indigo-600 font-semibold text-sm">
-                          {candidate.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(candidate.id);
-                        }}
-                        className="text-slate-400 hover:text-red-500 h-8 w-8"
-                        data-testid={`delete-candidate-${candidate.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    
-                    <h3 className="font-medium text-slate-900 mb-2 truncate">
-                      {candidate.name}
-                    </h3>
-                    
-                    <div className="space-y-1 mb-3">
-                      {candidate.email && (
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <Mail className="w-3 h-3" />
-                          <span className="truncate">{candidate.email}</span>
-                        </div>
-                      )}
-                      {candidate.phone && (
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <Phone className="w-3 h-3" />
-                          <span className="truncate">{candidate.phone}</span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                      <div className="flex gap-1">
-                        {candidate.evidence?.map((e, i) => (
-                          <span key={i} className="badge-neutral text-xs px-2 py-0.5">
-                            {e.type}
-                          </span>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid grid-cols-12 gap-6">
+          {/* Candidate List */}
+          <div className="col-span-5">
+            <Card className="bg-white/70 backdrop-blur border-slate-200/50">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg font-heading">Candidates</CardTitle>
+                <CardDescription>
+                  {filteredCandidates.length} candidates shown
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                  </div>
+                ) : filteredCandidates.length === 0 ? (
+                  <EmptyState
+                    icon={Users}
+                    title="No candidates yet"
+                    description="Upload CVs to start building your talent pool"
+                  />
+                ) : (
+                  <>
+                    <ScrollArea className="h-[500px]">
+                      <div className="space-y-2">
+                        {filteredCandidates.map((candidate) => (
+                          <div
+                            key={candidate.id}
+                            onClick={() => setDetailCandidate(candidate)}
+                            className={`p-4 rounded-xl cursor-pointer transition-all border ${
+                              detailCandidate?.id === candidate.id
+                                ? 'bg-indigo-50 border-indigo-200'
+                                : 'bg-white border-slate-100 hover:border-indigo-200'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white font-medium">
+                                  {candidate.name?.charAt(0)?.toUpperCase() || '?'}
+                                </div>
+                                <div>
+                                  <h3 className="font-medium text-slate-900">{candidate.name}</h3>
+                                  <p className="text-sm text-slate-500">{candidate.email || 'No email'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {candidate.evidence?.slice(0, 3).map((ev, idx) => (
+                                  <span key={idx} className="text-xs" title={ev.type}>
+                                    {getEvidenceIcon(ev.type)}
+                                  </span>
+                                ))}
+                                {candidate.evidence?.length > 3 && (
+                                  <span className="text-xs text-slate-400">+{candidate.evidence.length - 3}</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         ))}
                       </div>
-                      <Eye className="w-4 h-4 text-slate-400" />
+                    </ScrollArea>
+                    
+                    {/* Pagination */}
+                    <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
+                      <span className="text-sm text-slate-500">
+                        Page {page} of {totalPages}
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.max(1, p - 1))}
+                          disabled={page === 1}
+                          className="rounded-full"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                          disabled={page === totalPages}
+                          className="rounded-full"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-4 mt-6">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="rounded-full"
-                >
-                  <ChevronLeft className="w-4 h-4 mr-1" />
-                  Previous
-                </Button>
-                <span className="text-sm text-slate-500">
-                  Page {page} of {totalPages}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="rounded-full"
-                >
-                  Next
-                  <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
+          {/* Candidate Detail */}
+          <div className="col-span-7">
+            {detailCandidate ? (
+              <Card className="bg-white/70 backdrop-blur border-slate-200/50">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-2xl font-bold">
+                        {detailCandidate.name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div>
+                        {editMode ? (
+                          <Input
+                            value={editForm.name}
+                            onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
+                            className="font-heading text-xl mb-1"
+                          />
+                        ) : (
+                          <CardTitle className="font-heading text-xl">{detailCandidate.name}</CardTitle>
+                        )}
+                        <CardDescription>
+                          Added {new Date(detailCandidate.created_at).toLocaleDateString()}
+                        </CardDescription>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {editMode ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setEditMode(false)}
+                            className="rounded-full"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={handleSaveEdit}
+                            disabled={savingEdit}
+                            className="rounded-full bg-indigo-500 hover:bg-indigo-600 text-white"
+                          >
+                            {savingEdit && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            <Save className="w-4 h-4 mr-2" />
+                            Save
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleEdit}
+                            className="rounded-full"
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleReparse(detailCandidate.id)}
+                            disabled={reparsing}
+                            className="rounded-full"
+                          >
+                            {reparsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDelete(detailCandidate.id)}
+                            className="rounded-full text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="evidence" className="w-full">
+                    <TabsList className="w-full justify-start mb-4 bg-slate-100/50 p-1 rounded-xl">
+                      <TabsTrigger value="evidence" className="rounded-full px-6">Evidence ({detailCandidate.evidence?.length || 0})</TabsTrigger>
+                      <TabsTrigger value="info" className="rounded-full px-6">Contact Info</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="evidence">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium text-slate-700">Documents & Evidence</h3>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedCandidate(detailCandidate);
+                              setShowUploadDialog(true);
+                            }}
+                            className="rounded-full"
+                          >
+                            <Plus className="w-4 h-4 mr-2" />
+                            Add Evidence
+                          </Button>
+                        </div>
+                        
+                        {detailCandidate.evidence?.length > 0 ? (
+                          <ScrollArea className="h-[400px]">
+                            <div className="space-y-3">
+                              {detailCandidate.evidence.map((ev, index) => (
+                                <Card key={index} className={`border ${getEvidenceColor(ev.type)}`}>
+                                  <CardContent className="pt-4">
+                                    <div className="flex items-start justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-lg">{getEvidenceIcon(ev.type)}</span>
+                                        <div>
+                                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${getEvidenceColor(ev.type)}`}>
+                                            {ev.type?.toUpperCase()}
+                                          </span>
+                                          <p className="text-sm font-medium text-slate-700 mt-1">{ev.file_name}</p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs text-slate-400">
+                                          {ev.uploaded_at ? new Date(ev.uploaded_at).toLocaleDateString() : ''}
+                                        </span>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleDeleteEvidence(detailCandidate.id, index, ev.type)}
+                                          disabled={deletingEvidence === index}
+                                          className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                        >
+                                          {deletingEvidence === index ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <Trash2 className="w-4 h-4" />
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                    {ev.pages && ev.pages.length > 0 && (
+                                      <p className="text-xs text-slate-400 mb-2">
+                                        Pages: {ev.pages.join(', ')}
+                                      </p>
+                                    )}
+                                    <div className="bg-white/50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                                      <pre className="text-xs text-slate-600 whitespace-pre-wrap font-mono">
+                                        {ev.content?.substring(0, 500)}{ev.content?.length > 500 ? '...' : ''}
+                                      </pre>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        ) : (
+                          <div className="text-center py-8 text-slate-400">
+                            <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                            <p>No evidence uploaded yet</p>
+                          </div>
+                        )}
+                      </div>
+                    </TabsContent>
+                    
+                    <TabsContent value="info">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                          <Mail className="w-5 h-5 text-slate-400" />
+                          {editMode ? (
+                            <Input
+                              value={editForm.email}
+                              onChange={(e) => setEditForm(f => ({ ...f, email: e.target.value }))}
+                              placeholder="Email"
+                            />
+                          ) : (
+                            <span className="text-slate-700">{detailCandidate.email || 'No email'}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+                          <Phone className="w-5 h-5 text-slate-400" />
+                          {editMode ? (
+                            <Input
+                              value={editForm.phone}
+                              onChange={(e) => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                              placeholder="Phone"
+                            />
+                          ) : (
+                            <span className="text-slate-700">{detailCandidate.phone || 'No phone'}</span>
+                          )}
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="bg-white/70 backdrop-blur border-slate-200/50 h-full flex items-center justify-center">
+                <div className="text-center py-16">
+                  <User className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+                  <h3 className="text-lg font-medium text-slate-700">Select a candidate</h3>
+                  <p className="text-slate-400">Click on a candidate to view details</p>
+                </div>
+              </Card>
             )}
-          </>
-        )}
+          </div>
+        </div>
 
         {/* Upload Dialog */}
         <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
@@ -614,7 +827,7 @@ export const Candidates = () => {
               <DialogDescription>
                 {selectedCandidate 
                   ? 'Upload additional documents (CV, psychotest, knowledge test)'
-                  : 'Upload PDF files for multiple candidates, or a ZIP file for one candidate with multiple evidence files.'}
+                  : 'Upload PDF files or a ZIP package with multiple evidence files.'}
               </DialogDescription>
             </DialogHeader>
             
@@ -654,7 +867,6 @@ export const Candidates = () => {
                     multiple
                     onChange={handleFileSelect}
                     className="hidden"
-                    data-testid="file-input"
                   />
                   {uploading ? (
                     <Loader2 className="w-8 h-8 mx-auto mb-2 text-indigo-500 animate-spin" />
@@ -662,10 +874,10 @@ export const Candidates = () => {
                     <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
                   )}
                   <p className="font-medium text-slate-700">
-                    {uploading ? 'Uploading...' : 'Click to upload PDF files'}
+                    {uploading ? 'Processing...' : 'Click to upload PDF files'}
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
-                    {selectedCandidate ? 'Add documents to this candidate' : 'Each PDF creates one candidate'}
+                    {selectedCandidate ? 'Add documents to this candidate' : 'Each PDF creates one candidate (with auto evidence splitting)'}
                   </p>
                 </div>
               ) : (
@@ -679,7 +891,6 @@ export const Candidates = () => {
                     accept=".zip"
                     onChange={handleZipSelect}
                     className="hidden"
-                    data-testid="zip-input"
                   />
                   {zipUploading ? (
                     <Loader2 className="w-8 h-8 mx-auto mb-2 text-indigo-500 animate-spin" />
@@ -690,35 +901,284 @@ export const Candidates = () => {
                     {zipUploading ? 'Processing ZIP...' : 'Click to upload ZIP file'}
                   </p>
                   <p className="text-sm text-slate-500 mt-1">One ZIP = One candidate with multiple evidence</p>
-                  <div className="mt-4 text-xs text-slate-400 bg-slate-50 rounded-lg p-3 text-left">
-                    <p className="font-medium mb-1">Expected ZIP structure:</p>
-                    <ul className="list-disc list-inside space-y-0.5">
-                      <li>CV/resume.pdf (required, in root or cv/ folder)</li>
-                      <li>psychotest/*.pdf (optional)</li>
-                      <li>knowledge_test/*.pdf (optional)</li>
-                    </ul>
-                  </div>
                 </div>
               )}
-              
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowUploadDialog(false);
-                    setSelectedCandidate(null);
-                    setUploadMode('pdf');
-                  }}
-                  className="rounded-full"
-                >
-                  Cancel
-                </Button>
-              </div>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* NEW: ZIP Duplicate Detection Dialog */}
+        {/* BULK Duplicate Detection Dialog */}
+        <Dialog open={showBulkDuplicateDialog} onOpenChange={(open) => {
+          if (!open && !processingBulk) {
+            setShowBulkDuplicateDialog(false);
+            setBulkDuplicates([]);
+            setBulkDecisions({});
+          }
+        }}>
+          <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="font-heading flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                {bulkDuplicates.length} Potential Duplicate(s) Detected
+              </DialogTitle>
+              <DialogDescription>
+                Review each duplicate and choose an action. All items must have a decision before processing.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {/* Batch Actions */}
+            <div className="flex gap-2 py-2 border-b border-slate-200">
+              <span className="text-sm text-slate-500 mr-2">Batch Actions:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBatchAction('merge')}
+                className="rounded-full text-xs"
+              >
+                <GitMerge className="w-3 h-3 mr-1" />
+                Merge All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBatchAction('create')}
+                className="rounded-full text-xs"
+              >
+                <UserPlus className="w-3 h-3 mr-1" />
+                Create All New
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleBatchAction('replace')}
+                className="rounded-full text-xs"
+              >
+                <Replace className="w-3 h-3 mr-1" />
+                Replace All
+              </Button>
+            </div>
+
+            {/* Side by side comparison */}
+            <div className="flex-1 overflow-hidden">
+              <div className="grid grid-cols-12 gap-4 h-full">
+                {/* Left: List of duplicates */}
+                <div className="col-span-3 border-r border-slate-200 pr-4 overflow-y-auto">
+                  <p className="text-xs font-medium text-slate-500 mb-2">Files with duplicates:</p>
+                  <div className="space-y-2">
+                    {bulkDuplicates.map((dup, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => setSelectedBulkIndex(idx)}
+                        className={`p-3 rounded-lg cursor-pointer border transition-colors ${
+                          selectedBulkIndex === idx
+                            ? 'bg-indigo-50 border-indigo-200'
+                            : 'bg-white border-slate-100 hover:border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium truncate" title={dup.file.name}>
+                            {dup.file.name.length > 20 ? dup.file.name.substring(0, 20) + '...' : dup.file.name}
+                          </p>
+                          {bulkDecisions[idx]?.action && (
+                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {dup.duplicates.length} match(es)
+                        </p>
+                        {bulkDecisions[idx]?.action && (
+                          <span className={`text-xs px-2 py-0.5 rounded-full mt-1 inline-block ${
+                            bulkDecisions[idx].action === 'merge' ? 'bg-blue-100 text-blue-700' :
+                            bulkDecisions[idx].action === 'create' ? 'bg-green-100 text-green-700' :
+                            'bg-orange-100 text-orange-700'
+                          }`}>
+                            {bulkDecisions[idx].action}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Right: Side by side comparison */}
+                <div className="col-span-9 overflow-y-auto">
+                  {bulkDuplicates[selectedBulkIndex] && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* New Upload (Left) */}
+                      <Card className="border-green-200 bg-green-50/30">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <UserPlus className="w-4 h-4 text-green-600" />
+                            New Upload
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          <div>
+                            <Label className="text-xs text-slate-500">File</Label>
+                            <p className="text-sm font-medium">{bulkDuplicates[selectedBulkIndex].file.name}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-slate-500">Extracted Name</Label>
+                            <p className="text-sm font-medium">{bulkDuplicates[selectedBulkIndex].extractedInfo?.name || '-'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-slate-500">Extracted Email</Label>
+                            <p className="text-sm font-medium">{bulkDuplicates[selectedBulkIndex].extractedInfo?.email || '-'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-slate-500">Extracted Phone</Label>
+                            <p className="text-sm font-medium">{bulkDuplicates[selectedBulkIndex].extractedInfo?.phone || '-'}</p>
+                          </div>
+                          <div>
+                            <Label className="text-xs text-slate-500">Evidence Detected</Label>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {bulkDuplicates[selectedBulkIndex].evidence_preview?.map((ev, i) => (
+                                <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${getEvidenceColor(ev.type)}`}>
+                                  {getEvidenceIcon(ev.type)} {ev.type}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Existing Match (Right) */}
+                      <Card className="border-amber-200 bg-amber-50/30">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <UserCheck className="w-4 h-4 text-amber-600" />
+                            Existing Match(es)
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            {bulkDuplicates[selectedBulkIndex].duplicates.map((match) => (
+                              <div 
+                                key={match.candidate_id}
+                                className={`p-3 rounded-lg border cursor-pointer transition-colors ${
+                                  bulkDecisions[selectedBulkIndex]?.targetId === match.candidate_id
+                                    ? 'border-indigo-500 bg-indigo-50'
+                                    : 'border-slate-200 bg-white hover:border-slate-300'
+                                }`}
+                                onClick={() => {
+                                  if (bulkDecisions[selectedBulkIndex]?.action === 'merge' || 
+                                      bulkDecisions[selectedBulkIndex]?.action === 'replace') {
+                                    handleBulkDecision(selectedBulkIndex, bulkDecisions[selectedBulkIndex].action, match.candidate_id);
+                                  }
+                                }}
+                              >
+                                <p className="font-medium text-sm">{match.candidate_name}</p>
+                                <p className="text-xs text-slate-500">{match.candidate_email}</p>
+                                {match.candidate_phone && <p className="text-xs text-slate-400">{match.candidate_phone}</p>}
+                                <div className="flex gap-1 mt-2">
+                                  {match.match_reasons?.map((reason, i) => (
+                                    <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
+                                      reason === 'email_match' ? 'bg-red-100 text-red-700' :
+                                      reason === 'phone_match' ? 'bg-orange-100 text-orange-700' :
+                                      'bg-yellow-100 text-yellow-700'
+                                    }`}>
+                                      {reason.replace('_', ' ')}
+                                    </span>
+                                  ))}
+                                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                                    match.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                                  }`}>
+                                    {match.confidence}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  {/* Action buttons for selected item */}
+                  {bulkDuplicates[selectedBulkIndex] && (
+                    <div className="mt-4 p-4 bg-slate-50 rounded-lg">
+                      <p className="text-sm font-medium text-slate-700 mb-3">Choose action for this file:</p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant={bulkDecisions[selectedBulkIndex]?.action === 'merge' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleBulkDecision(
+                            selectedBulkIndex, 
+                            'merge', 
+                            bulkDecisions[selectedBulkIndex]?.targetId || bulkDuplicates[selectedBulkIndex].duplicates[0]?.candidate_id
+                          )}
+                          className={`rounded-full ${bulkDecisions[selectedBulkIndex]?.action === 'merge' ? 'bg-blue-500 hover:bg-blue-600' : ''}`}
+                        >
+                          <GitMerge className="w-4 h-4 mr-2" />
+                          Merge (Add Evidence)
+                        </Button>
+                        <Button
+                          variant={bulkDecisions[selectedBulkIndex]?.action === 'create' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleBulkDecision(selectedBulkIndex, 'create', null)}
+                          className={`rounded-full ${bulkDecisions[selectedBulkIndex]?.action === 'create' ? 'bg-green-500 hover:bg-green-600' : ''}`}
+                        >
+                          <UserPlus className="w-4 h-4 mr-2" />
+                          Create New
+                        </Button>
+                        <Button
+                          variant={bulkDecisions[selectedBulkIndex]?.action === 'replace' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleBulkDecision(
+                            selectedBulkIndex, 
+                            'replace', 
+                            bulkDecisions[selectedBulkIndex]?.targetId || bulkDuplicates[selectedBulkIndex].duplicates[0]?.candidate_id
+                          )}
+                          className={`rounded-full ${bulkDecisions[selectedBulkIndex]?.action === 'replace' ? 'bg-orange-500 hover:bg-orange-600' : ''}`}
+                        >
+                          <Replace className="w-4 h-4 mr-2" />
+                          Replace (Delete Old)
+                        </Button>
+                      </div>
+                      {(bulkDecisions[selectedBulkIndex]?.action === 'merge' || bulkDecisions[selectedBulkIndex]?.action === 'replace') && (
+                        <p className="text-xs text-slate-500 mt-2">
+                          Click on an existing candidate above to select the target for {bulkDecisions[selectedBulkIndex]?.action}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="border-t border-slate-200 pt-4">
+              <div className="flex items-center justify-between w-full">
+                <span className="text-sm text-slate-500">
+                  {Object.values(bulkDecisions).filter(d => d?.action).length} of {bulkDuplicates.length} decisions made
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowBulkDuplicateDialog(false);
+                      setBulkDuplicates([]);
+                      setBulkDecisions({});
+                    }}
+                    disabled={processingBulk}
+                    className="rounded-full"
+                  >
+                    Cancel All
+                  </Button>
+                  <Button
+                    onClick={processBulkDecisions}
+                    disabled={!allDecisionsMade() || processingBulk}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
+                  >
+                    {processingBulk && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                    Process All ({Object.values(bulkDecisions).filter(d => d?.action).length})
+                  </Button>
+                </div>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ZIP Duplicate Dialog */}
         <Dialog open={showZipDuplicateDialog} onOpenChange={(open) => {
           if (!open) {
             setShowZipDuplicateDialog(false);
@@ -731,10 +1191,10 @@ export const Candidates = () => {
             <DialogHeader>
               <DialogTitle className="font-heading flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Potential Duplicate Detected
+                Potential Duplicate Detected (ZIP)
               </DialogTitle>
               <DialogDescription>
-                The candidate in this ZIP file may already exist in your talent pool. Choose how to proceed.
+                The candidate in this ZIP file may already exist. Choose how to proceed.
               </DialogDescription>
             </DialogHeader>
             
@@ -745,7 +1205,6 @@ export const Candidates = () => {
                     <p className="text-sm font-medium text-slate-700 mb-3">
                       Found {zipDuplicates.duplicates?.length || 0} potential match(es):
                     </p>
-                    
                     <div className="space-y-2">
                       {zipDuplicates.duplicates?.map((match) => (
                         <div 
@@ -763,9 +1222,6 @@ export const Candidates = () => {
                           <div className="flex-1">
                             <p className="font-medium text-sm">{match.candidate_name}</p>
                             <p className="text-xs text-slate-500">{match.candidate_email}</p>
-                            {match.candidate_phone && (
-                              <p className="text-xs text-slate-400">{match.candidate_phone}</p>
-                            )}
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {match.match_reasons?.map((reason, i) => (
@@ -778,25 +1234,11 @@ export const Candidates = () => {
                               </span>
                             ))}
                           </div>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            match.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {match.confidence} confidence
-                          </span>
                         </div>
                       ))}
                     </div>
                   </CardContent>
                 </Card>
-                
-                <div className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
-                  <p className="font-medium mb-2">What would you like to do?</p>
-                  <ul className="space-y-1 text-xs text-slate-500">
-                    <li><strong>Merge:</strong> Add evidence from ZIP to selected existing candidate</li>
-                    <li><strong>Create New:</strong> Create as a separate candidate anyway</li>
-                    <li><strong>Cancel:</strong> Discard and review manually</li>
-                  </ul>
-                </div>
               </div>
             )}
             
@@ -807,7 +1249,6 @@ export const Candidates = () => {
                   setShowZipDuplicateDialog(false);
                   setZipDuplicates(null);
                   setPendingZipFile(null);
-                  setSelectedMergeTarget(null);
                 }}
                 className="rounded-full"
               >
@@ -835,502 +1276,9 @@ export const Candidates = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* NEW: PDF Duplicate Detection Dialog */}
-        <Dialog open={showPdfDuplicateDialog} onOpenChange={(open) => {
-          if (!open) {
-            setShowPdfDuplicateDialog(false);
-            setPdfDuplicates(null);
-            setPendingPdfFile(null);
-            setSelectedPdfMergeTarget(null);
-            setExtractedInfo(null);
-          }
-        }}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="font-heading flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Potential Duplicate Detected
-              </DialogTitle>
-              <DialogDescription>
-                The uploaded PDF matches an existing candidate. Choose how to proceed.
-              </DialogDescription>
-            </DialogHeader>
-            
-            {pdfDuplicates && (
-              <div className="space-y-4 py-4">
-                {/* Extracted info from new PDF */}
-                {extractedInfo && (
-                  <Card className="border-slate-200 bg-slate-50">
-                    <CardContent className="pt-4">
-                      <p className="text-sm font-medium text-slate-700 mb-2">Extracted from uploaded file:</p>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <span className="text-slate-500">Name:</span>
-                          <p className="font-medium">{extractedInfo.name || '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Email:</span>
-                          <p className="font-medium">{extractedInfo.email || '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-slate-500">Phone:</span>
-                          <p className="font-medium">{extractedInfo.phone || '-'}</p>
-                        </div>
-                      </div>
-                      {pdfDuplicates.evidence_preview && (
-                        <div className="mt-3 pt-3 border-t border-slate-200">
-                          <span className="text-slate-500 text-xs">Evidence detected: </span>
-                          <span className="text-xs font-medium">
-                            {pdfDuplicates.evidence_preview.map(e => `${e.type} (${e.pages?.length || 1} pages)`).join(', ')}
-                          </span>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Card className="border-amber-200 bg-amber-50/50">
-                  <CardContent className="pt-4">
-                    <p className="text-sm font-medium text-slate-700 mb-3">
-                      Matches {pdfDuplicates.duplicates?.length || 0} existing candidate(s):
-                    </p>
-                    
-                    <div className="space-y-2">
-                      {pdfDuplicates.duplicates?.map((match) => (
-                        <div 
-                          key={match.candidate_id} 
-                          className={`flex items-center gap-3 p-3 bg-white rounded-lg border cursor-pointer transition-colors ${
-                            selectedPdfMergeTarget === match.candidate_id 
-                              ? 'border-indigo-500 ring-2 ring-indigo-200' 
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                          onClick={() => setSelectedPdfMergeTarget(match.candidate_id)}
-                        >
-                          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
-                            <UserCheck className="w-5 h-5 text-indigo-600" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{match.candidate_name}</p>
-                            <p className="text-xs text-slate-500">{match.candidate_email}</p>
-                            {match.candidate_phone && (
-                              <p className="text-xs text-slate-400">{match.candidate_phone}</p>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {match.match_reasons?.map((reason, i) => (
-                              <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
-                                reason === 'email_match' ? 'bg-red-100 text-red-700' :
-                                reason === 'phone_match' ? 'bg-orange-100 text-orange-700' :
-                                'bg-yellow-100 text-yellow-700'
-                              }`}>
-                                {reason.replace('_', ' ')}
-                              </span>
-                            ))}
-                          </div>
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            match.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
-                          }`}>
-                            {match.confidence}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-                
-                <div className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
-                  <p className="font-medium mb-2">Choose an action:</p>
-                  <ul className="space-y-1 text-xs text-slate-500">
-                    <li><strong>Merge:</strong> Add evidence from this PDF to the selected existing candidate</li>
-                    <li><strong>Create New:</strong> Create as a separate candidate anyway</li>
-                    <li><strong>Cancel:</strong> Discard upload and review manually</li>
-                  </ul>
-                </div>
-              </div>
-            )}
-            
-            <DialogFooter className="gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowPdfDuplicateDialog(false);
-                  setPdfDuplicates(null);
-                  setPendingPdfFile(null);
-                  setSelectedPdfMergeTarget(null);
-                  setExtractedInfo(null);
-                }}
-                className="rounded-full"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handlePdfForceCreate}
-                disabled={uploading}
-                className="rounded-full"
-              >
-                {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                <UserPlus className="w-4 h-4 mr-2" />
-                Create New
-              </Button>
-              <Button
-                onClick={() => selectedPdfMergeTarget && handlePdfMerge(selectedPdfMergeTarget)}
-                disabled={uploading || !selectedPdfMergeTarget}
-                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
-              >
-                {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                <GitMerge className="w-4 h-4 mr-2" />
-                Merge into Selected
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Duplicate Detection Dialog */}
-        <Dialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
-          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="font-heading flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-amber-500" />
-                Duplicate Candidates Detected
-              </DialogTitle>
-              <DialogDescription>
-                The following uploaded candidates may be duplicates. Choose how to handle each one.
-              </DialogDescription>
-            </DialogHeader>
-            
-            <ScrollArea className="flex-1 pr-4">
-              <div className="space-y-4 py-4">
-                {duplicateMatches.map((match, idx) => (
-                  <Card key={match.newCandidate.id} className="border-amber-200 bg-amber-50/50">
-                    <CardContent className="pt-4">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-                          <UserPlus className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium text-slate-900">New Upload: {match.newCandidate.name}</p>
-                          <p className="text-sm text-slate-500">{match.newCandidate.email}</p>
-                        </div>
-                      </div>
-                      
-                      <div className="pl-14 space-y-3">
-                        <p className="text-sm font-medium text-slate-700">Matches existing candidate(s):</p>
-                        
-                        {match.existingCandidates.map(existing => (
-                          <div key={existing.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border border-slate-200">
-                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
-                              <UserCheck className="w-4 h-4 text-indigo-600" />
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-medium text-sm">{existing.name}</p>
-                              <p className="text-xs text-slate-500">{existing.email}</p>
-                            </div>
-                          </div>
-                        ))}
-                        
-                        <div className="space-y-2 pt-2">
-                          <p className="text-sm font-medium text-slate-700">Action:</p>
-                          <div className="space-y-2">
-                            <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-white cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`decision-${match.newCandidate.id}`}
-                                checked={duplicateDecisions[match.newCandidate.id]?.action === 'keep'}
-                                onChange={() => handleDuplicateDecision(match.newCandidate.id, 'keep')}
-                                className="text-indigo-600"
-                              />
-                              <span className="text-sm">Keep both (no merge)</span>
-                            </label>
-                            
-                            <label className="flex items-center gap-3 p-2 rounded-lg hover:bg-white cursor-pointer">
-                              <input
-                                type="radio"
-                                name={`decision-${match.newCandidate.id}`}
-                                checked={duplicateDecisions[match.newCandidate.id]?.action === 'delete'}
-                                onChange={() => handleDuplicateDecision(match.newCandidate.id, 'delete')}
-                                className="text-indigo-600"
-                              />
-                              <span className="text-sm">Delete new upload (keep existing only)</span>
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </ScrollArea>
-            
-            <DialogFooter className="border-t pt-4">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowDuplicateDialog(false);
-                  setDuplicateMatches([]);
-                }}
-                className="rounded-full"
-              >
-                Cancel (Keep All)
-              </Button>
-              <Button
-                onClick={processDuplicateDecisions}
-                disabled={processingDuplicates}
-                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
-              >
-                {processingDuplicates ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : null}
-                Apply Decisions
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Candidate Detail Dialog */}
-        <Dialog open={!!detailCandidate} onOpenChange={() => setDetailCandidate(null)}>
-          <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 rounded-full bg-indigo-100 flex items-center justify-center">
-                    <span className="text-indigo-600 font-bold text-lg">
-                      {detailCandidate?.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </span>
-                  </div>
-                  <div>
-                    <DialogTitle className="font-heading text-xl">
-                      {editMode ? 'Edit Candidate' : detailCandidate?.name}
-                    </DialogTitle>
-                    <DialogDescription>
-                      Added {detailCandidate?.created_at ? new Date(detailCandidate.created_at).toLocaleDateString() : ''}
-                    </DialogDescription>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleReparse}
-                    disabled={reparsing}
-                    className="rounded-full"
-                    title="Re-parse contact info from CV using AI"
-                  >
-                    {reparsing ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-4 h-4" />
-                    )}
-                    <span className="ml-1">AI Re-parse</span>
-                  </Button>
-                  {!editMode && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setEditMode(true)}
-                      className="rounded-full"
-                    >
-                      <Edit className="w-4 h-4 mr-1" />
-                      Edit
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </DialogHeader>
-            
-            <ScrollArea className="flex-1 pr-4">
-              {detailCandidate && (
-                <Tabs defaultValue="info" className="w-full">
-                  <TabsList className="bg-slate-100 p-1 rounded-full mb-4">
-                    <TabsTrigger value="info" className="rounded-full px-6">Contact Info</TabsTrigger>
-                    <TabsTrigger value="evidence" className="rounded-full px-6">
-                      Evidence ({detailCandidate.evidence?.length || 0})
-                    </TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="info" className="space-y-4">
-                    {editMode ? (
-                      <Card className="border-slate-100">
-                        <CardContent className="pt-6 space-y-4">
-                          <div className="space-y-2">
-                            <Label htmlFor="edit-name">Full Name</Label>
-                            <div className="relative">
-                              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                              <Input
-                                id="edit-name"
-                                value={editForm.name}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                                className="pl-10"
-                                data-testid="edit-name"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="edit-email">Email</Label>
-                            <div className="relative">
-                              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                              <Input
-                                id="edit-email"
-                                value={editForm.email}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, email: e.target.value }))}
-                                className="pl-10"
-                                data-testid="edit-email"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2">
-                            <Label htmlFor="edit-phone">Phone</Label>
-                            <div className="relative">
-                              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                              <Input
-                                id="edit-phone"
-                                value={editForm.phone}
-                                onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
-                                className="pl-10"
-                                data-testid="edit-phone"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div className="flex justify-end gap-2 pt-4">
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setEditMode(false);
-                                setEditForm({
-                                  name: detailCandidate.name,
-                                  email: detailCandidate.email,
-                                  phone: detailCandidate.phone
-                                });
-                              }}
-                              className="rounded-full"
-                            >
-                              Cancel
-                            </Button>
-                            <Button
-                              onClick={handleSaveEdit}
-                              disabled={savingEdit}
-                              className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
-                              data-testid="save-edit-btn"
-                            >
-                              {savingEdit ? (
-                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              ) : (
-                                <Save className="w-4 h-4 mr-2" />
-                              )}
-                              Save Changes
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <Card className="border-slate-100">
-                        <CardContent className="pt-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                              <Label className="text-slate-500 text-xs">Full Name</Label>
-                              <p className="font-medium text-slate-900 mt-1">{detailCandidate.name}</p>
-                            </div>
-                            <div>
-                              <Label className="text-slate-500 text-xs">Email</Label>
-                              <p className="font-medium text-slate-900 mt-1">
-                                {detailCandidate.email || <span className="text-slate-400">Not provided</span>}
-                              </p>
-                            </div>
-                            <div>
-                              <Label className="text-slate-500 text-xs">Phone</Label>
-                              <p className="font-medium text-slate-900 mt-1">
-                                {detailCandidate.phone || <span className="text-slate-400">Not provided</span>}
-                              </p>
-                            </div>
-                            <div>
-                              <Label className="text-slate-500 text-xs">Last Updated</Label>
-                              <p className="font-medium text-slate-900 mt-1">
-                                {new Date(detailCandidate.updated_at).toLocaleString()}
-                              </p>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </TabsContent>
-
-                  <TabsContent value="evidence" className="space-y-4">
-                    {detailCandidate.evidence?.length === 0 ? (
-                      <Card className="border-slate-100">
-                        <CardContent className="py-12 text-center">
-                          <FileText className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                          <p className="text-slate-500">No evidence uploaded</p>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedCandidate(detailCandidate);
-                              setShowUploadDialog(true);
-                            }}
-                            className="mt-4 rounded-full"
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            Add Evidence
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ) : (
-                      <>
-                        <div className="flex justify-end">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedCandidate(detailCandidate);
-                              setShowUploadDialog(true);
-                            }}
-                            className="rounded-full"
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            Add More
-                          </Button>
-                        </div>
-                        
-                        {detailCandidate.evidence.map((evidence, idx) => (
-                          <Card key={idx} className="border-slate-100">
-                            <CardHeader className="pb-2">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                                    <FileText className="w-5 h-5 text-slate-500" />
-                                  </div>
-                                  <div>
-                                    <CardTitle className="text-base">{evidence.file_name}</CardTitle>
-                                    <CardDescription className="text-xs">
-                                      {evidence.type.toUpperCase()} • Uploaded {new Date(evidence.uploaded_at).toLocaleDateString()}
-                                    </CardDescription>
-                                  </div>
-                                </div>
-                                <span className="badge-neutral capitalize">{evidence.type}</span>
-                              </div>
-                            </CardHeader>
-                            <CardContent>
-                              <div className="bg-slate-50 rounded-lg p-4 max-h-96 overflow-y-auto">
-                                <pre className="text-xs text-slate-600 whitespace-pre-wrap font-sans">
-                                  {evidence.content}
-                                </pre>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              )}
-            </ScrollArea>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
 };
+
+export default Candidates;
