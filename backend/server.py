@@ -1322,6 +1322,23 @@ async def search_candidates(
         "limit": limit
     }
 
+@api_router.post("/candidates/check-duplicates")
+async def check_duplicate_candidates(
+    emails: List[str] = [],
+    current_user: dict = Depends(get_current_user)
+):
+    """Check if candidates with given emails already exist"""
+    if not current_user.get("company_id"):
+        return {"duplicates": []}
+    
+    # Find existing candidates with matching emails
+    existing = await db.candidates.find(
+        {"company_id": current_user["company_id"], "email": {"$in": emails}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1}
+    ).to_list(100)
+    
+    return {"duplicates": existing}
+
 @api_router.get("/analysis/job/{job_id}", response_model=List[AnalysisResult])
 async def get_job_analyses(job_id: str, min_score: Optional[float] = None, current_user: dict = Depends(get_current_user)):
     query = {"job_id": job_id}
