@@ -1339,6 +1339,25 @@ async def check_duplicate_candidates(
     
     return {"duplicates": existing}
 
+# Merge logs endpoint - MUST be before {candidate_id} route
+@api_router.get("/candidates/merge-logs")
+async def get_merge_logs(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Get merge audit logs for the company.
+    """
+    if not current_user.get("company_id"):
+        return []
+    
+    logs = await db.merge_logs.find(
+        {"company_id": current_user["company_id"]},
+        {"_id": 0}
+    ).sort("merged_at", -1).limit(limit).to_list(limit)
+    
+    return logs
+
 @api_router.get("/analysis/job/{job_id}", response_model=List[AnalysisResult])
 async def get_job_analyses(job_id: str, min_score: Optional[float] = None, current_user: dict = Depends(get_current_user)):
     query = {"job_id": job_id}
