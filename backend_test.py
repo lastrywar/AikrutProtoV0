@@ -695,6 +695,187 @@ startxref
                 return False
         return success
 
+    # NEW EVIDENCE CRUD AND REPLACE ENDPOINTS TESTS
+    def test_delete_evidence(self):
+        """Test DELETE /api/candidates/{candidate_id}/evidence/{evidence_index}"""
+        # First, we need a candidate with evidence
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Delete Evidence", False, "Need candidate with evidence from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        # Get candidate to check current evidence count
+        success, candidate_response = self.run_test(
+            "Get Candidate Before Delete",
+            "GET",
+            f"candidates/{candidate_id}",
+            200
+        )
+        
+        if not success or 'evidence' not in candidate_response:
+            self.log_result("Delete Evidence", False, "Could not get candidate evidence")
+            return False
+            
+        evidence_count_before = len(candidate_response['evidence'])
+        if evidence_count_before == 0:
+            self.log_result("Delete Evidence", False, "No evidence to delete")
+            return False
+            
+        print(f"   Evidence count before delete: {evidence_count_before}")
+        
+        # Delete evidence at index 0
+        success, response = self.run_test(
+            "Delete Evidence",
+            "DELETE",
+            f"candidates/{candidate_id}/evidence/0",
+            200
+        )
+        
+        if success:
+            expected_fields = ['status', 'deleted_evidence', 'candidate', 'remaining_evidence']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'deleted':
+                    remaining_count = response['remaining_evidence']
+                    if remaining_count == evidence_count_before - 1:
+                        print(f"   Successfully deleted evidence. Remaining: {remaining_count}")
+                        print(f"   Deleted evidence: {response['deleted_evidence']}")
+                        return True
+                    else:
+                        self.log_result("Delete Evidence", False, f"Expected {evidence_count_before - 1} remaining, got {remaining_count}")
+                        return False
+                else:
+                    self.log_result("Delete Evidence", False, f"Expected status 'deleted', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Delete Evidence", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_delete_evidence_invalid_index(self):
+        """Test DELETE evidence with invalid index (should return 400)"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Delete Evidence - Invalid Index", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        # Try to delete evidence at invalid index (999)
+        success, response = self.run_test(
+            "Delete Evidence - Invalid Index",
+            "DELETE",
+            f"candidates/{candidate_id}/evidence/999",
+            400  # Expecting 400 error
+        )
+        return success
+
+    def test_replace_candidate(self):
+        """Test POST /api/candidates/replace"""
+        # Create two candidates for replacement test
+        success1, response1 = self.run_test(
+            "Create Candidate for Replace (Old)",
+            "POST",
+            "candidates",
+            200,
+            data={
+                "name": "Alice Johnson",
+                "email": "alice.johnson@example.com",
+                "phone": "+1111111111"
+            }
+        )
+        
+        if not success1 or 'id' not in response1:
+            self.log_result("Replace Candidate", False, "Failed to create old candidate")
+            return False
+            
+        old_candidate_id = response1['id']
+        print(f"   Created old candidate ID: {old_candidate_id}")
+        
+        # Now replace the candidate with new data
+        new_evidence = [
+            {
+                "type": "cv",
+                "file_name": "new_resume.pdf",
+                "content": "Updated resume content with new experience",
+                "uploaded_at": datetime.now().isoformat(),
+                "source": "replacement"
+            }
+        ]
+        
+        success, response = self.run_test(
+            "Replace Candidate",
+            "POST",
+            "candidates/replace",
+            200,
+            data={
+                "old_candidate_id": old_candidate_id,
+                "new_name": "Alice Johnson-Smith",
+                "new_email": "alice.johnson.smith@example.com",
+                "new_phone": "+2222222222",
+                "new_evidence": new_evidence
+            }
+        )
+        
+        if success:
+            expected_fields = ['status', 'old_candidate_id', 'new_candidate']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'replaced':
+                    new_candidate = response['new_candidate']
+                    if (new_candidate['name'] == "Alice Johnson-Smith" and 
+                        new_candidate['email'] == "alice.johnson.smith@example.com" and
+                        response['old_candidate_id'] == old_candidate_id):
+                        
+                        print(f"   Successfully replaced candidate")
+                        print(f"   Old ID: {old_candidate_id}")
+                        print(f"   New ID: {new_candidate['id']}")
+                        print(f"   New name: {new_candidate['name']}")
+                        
+                        # Verify old candidate is deleted
+                        success_check, _ = self.run_test(
+                            "Verify Old Candidate Deleted",
+                            "GET",
+                            f"candidates/{old_candidate_id}",
+                            404  # Should return 404 since it's deleted
+                        )
+                        
+                        if success_check:
+                            print(f"   ✅ Old candidate properly deleted")
+                            return True
+                        else:
+                            self.log_result("Replace Candidate", False, "Old candidate was not deleted")
+                            return False
+                    else:
+                        self.log_result("Replace Candidate", False, "New candidate data doesn't match expected values")
+                        return False
+                else:
+                    self.log_result("Replace Candidate", False, f"Expected status 'replaced', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Replace Candidate", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_replace_candidate_nonexistent(self):
+        """Test replace candidate with non-existent old candidate ID (should return 404)"""
+        fake_id = str(uuid.uuid4())
+        
+        success, response = self.run_test(
+            "Replace Candidate - Non-existent",
+            "POST",
+            "candidates/replace",
+            404,  # Expecting 404 error
+            data={
+                "old_candidate_id": fake_id,
+                "new_name": "Test Name",
+                "new_email": "test@example.com",
+                "new_phone": "+1234567890",
+                "new_evidence": []
+            }
+        )
+        return success
+
     def run_all_tests(self):
         """Run all backend tests"""
         print("🚀 Starting TalentAI Backend API Tests")
