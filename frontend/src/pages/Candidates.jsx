@@ -758,11 +758,35 @@ export const Candidates = () => {
                                         Pages: {ev.pages.join(', ')}
                                       </p>
                                     )}
-                                    <div className="bg-white/50 rounded-lg p-3 max-h-32 overflow-y-auto">
+                                    {/* Content length indicator */}
+                                    <div className="flex items-center justify-between mb-2">
+                                      <span className="text-xs text-slate-400">
+                                        Content: {ev.content?.length?.toLocaleString() || 0} characters
+                                      </span>
+                                      {ev.content?.length > 500 && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => setExpandedEvidence(expandedEvidence === index ? null : index)}
+                                          className="text-xs h-6 px-2 text-indigo-600 hover:text-indigo-800"
+                                        >
+                                          {expandedEvidence === index ? 'Show Less' : 'View Full Content'}
+                                        </Button>
+                                      )}
+                                    </div>
+                                    <div className={`bg-white/50 rounded-lg p-3 overflow-y-auto ${expandedEvidence === index ? 'max-h-96' : 'max-h-32'}`}>
                                       <pre className="text-xs text-slate-600 whitespace-pre-wrap font-mono">
-                                        {ev.content?.substring(0, 500)}{ev.content?.length > 500 ? '...' : ''}
+                                        {expandedEvidence === index 
+                                          ? ev.content 
+                                          : (ev.content?.substring(0, 500) + (ev.content?.length > 500 ? '...' : ''))}
                                       </pre>
                                     </div>
+                                    {expandedEvidence === index && ev.content?.length > 500 && (
+                                      <p className="text-xs text-green-600 mt-2 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        Full content displayed ({ev.content.length.toLocaleString()} characters)
+                                      </p>
+                                    )}
                                   </CardContent>
                                 </Card>
                               ))}
