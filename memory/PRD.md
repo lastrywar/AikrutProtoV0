@@ -39,16 +39,23 @@ AI-powered CV screening platform helping HR teams reduce time spent on candidate
 - Responsive sidebar navigation
 - Modern pastel SaaS UI design
 
+### ✅ Bug Fixes - January 22, 2026
+- **ObjectId Serialization**: Fixed `serialize_doc` helper to recursively convert MongoDB ObjectIds to strings
+- **Deleted Candidate Handling**: Analysis results now show "[Deleted] Candidate Name" for removed candidates
+- **Duplicate Candidate Detection**: `/api/candidates/check-duplicates` endpoint with frontend confirmation dialog
+- **Analysis Modal Scrollability**: Modal now properly scrolls with `h-[85vh]` and `overflow-y-auto`
+- **Bulk Delete Analysis**: Added bulk delete functionality for analysis results
+- **Route Ordering**: Fixed `/candidates/search` route to be matched before `/candidates/{candidate_id}`
+- **Super Admin Settings**: Page at `/admin-settings` for configuring AI prompts
+
 ### 🔄 P0 Features (High Priority)
 - Bulk CV upload progress indicator
 - Export analysis results to CSV/PDF
 - Email notifications for completed analyses
 
 ### 📋 P1 Features (Medium Priority)
-- Candidate search and filtering
 - Job status management (open/closed/draft)
 - Analysis comparison view
-- Duplicate candidate detection
 
 ### 📝 P2 Features (Lower Priority)
 - Team member management
