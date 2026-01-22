@@ -216,6 +216,30 @@ backend:
           agent: "testing"
           comment: "Successfully tested candidate_id parameter. Adds evidence to existing candidate without duplicate checking. Returns status 'updated' with candidate details, evidence_added count, and evidence_types array. Evidence appending working correctly."
 
+  - task: "DELETE /api/candidates/{candidate_id}/evidence/{evidence_index} endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested evidence deletion by index. Properly removes evidence at specified index, returns deleted evidence info, updated candidate, and remaining evidence count. Also tested invalid index handling (returns 400 error as expected)."
+
+  - task: "POST /api/candidates/replace endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested candidate replacement functionality. Deletes old candidate, creates new candidate with provided data, logs replacement action, and returns proper response. Verified old candidate is properly deleted (404 when accessed). Also tested error handling for non-existent candidate (returns 404 as expected)."
+
 frontend:
   # No frontend testing required for this task
 
