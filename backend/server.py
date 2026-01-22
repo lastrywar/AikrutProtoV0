@@ -993,8 +993,26 @@ async def delete_candidate(candidate_id: str, current_user: dict = Depends(get_c
 async def upload_cv(
     file: UploadFile = File(...),
     candidate_id: Optional[str] = Form(None),
+    force_create: bool = Form(False),
+    merge_target_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
+    """
+    Upload CV with duplicate detection and evidence splitting.
+    
+    Flow for NEW candidate (no candidate_id):
+    1. Parse PDF and extract contact info
+    2. Check for duplicates by email/phone/name
+    3. If duplicates found and force_create=False: return duplicate warning
+    4. If force_create=True or merge_target_id provided: proceed
+    5. Split PDF into evidence types (CV, certificates, etc.)
+    6. Create candidate or merge into existing
+    
+    Flow for EXISTING candidate (candidate_id provided):
+    1. Parse PDF
+    2. Split into evidence types
+    3. Append all evidence to existing candidate
+    """
     if not current_user.get("company_id"):
         raise HTTPException(status_code=400, detail="Create a company first")
     
@@ -1008,11 +1026,62 @@ async def upload_cv(
         raise HTTPException(status_code=400, detail="Could not extract text from PDF")
     
     now = datetime.now(timezone.utc).isoformat()
+    company_id = current_user["company_id"]
     
-    # Try AI-powered parsing first, fallback to basic parsing
+    # Get AI settings for contact extraction and evidence classification
     settings = await get_ai_settings(current_user["id"])
     admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
     
+    # Split PDF into evidence types
+    evidence_list = await split_pdf_into_evidence(
+        content, 
+        file.filename,
+        settings.openrouter_api_key if settings else None,
+        settings.model_name if settings else None
+    )
+    
+    # Add timestamps and source to evidence
+    for ev in evidence_list:
+        ev["uploaded_at"] = now
+        ev["source"] = "pdf_upload"
+    
+    # If adding to existing candidate, just append evidence
+    if candidate_id:
+        candidate = await db.candidates.find_one(
+            {"id": candidate_id, "company_id": company_id}
+        )
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Candidate not found")
+        
+        # Convert evidence_list to proper format (remove 'pages' field for storage)
+        evidence_to_add = []
+        for ev in evidence_list:
+            evidence_to_add.append({
+                "type": ev["type"],
+                "file_name": ev["file_name"],
+                "content": ev["content"],
+                "uploaded_at": ev["uploaded_at"],
+                "source": ev.get("source", "pdf_upload"),
+                "pages": ev.get("pages", [])
+            })
+        
+        await db.candidates.update_one(
+            {"id": candidate_id, "company_id": company_id},
+            {
+                "$push": {"evidence": {"$each": evidence_to_add}},
+                "$set": {"updated_at": now}
+            }
+        )
+        
+        updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+        return {
+            "status": "updated",
+            "candidate": CandidateResponse(**updated),
+            "evidence_added": len(evidence_to_add),
+            "evidence_types": [e["type"] for e in evidence_to_add]
+        }
+    
+    # For new candidate: Extract contact info first
     name = ""
     email = ""
     phone = ""
@@ -1059,11 +1128,9 @@ Rules:
     # Fallback to basic parsing if AI didn't work
     if not name:
         lines = parsed_text.split('\n')
-        # Try to find name in first few non-empty lines
         for line in lines[:10]:
             line = line.strip()
             if line and len(line) > 2 and len(line) < 50:
-                # Check if it looks like a name (no numbers, no @ symbol)
                 if not any(c.isdigit() for c in line) and '@' not in line:
                     name = line
                     break
@@ -1071,14 +1138,11 @@ Rules:
             name = "Unknown Candidate"
     
     if not email:
-        import re
         email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         emails = re.findall(email_pattern, parsed_text)
         email = emails[0] if emails else ""
     
     if not phone:
-        import re
-        # Common phone patterns
         phone_patterns = [
             r'\+?[\d\s\-\(\)]{10,}',
             r'\d{3}[\s\-]?\d{3}[\s\-]?\d{4}',
@@ -1090,43 +1154,174 @@ Rules:
                 phone = phones[0].strip()
                 break
     
-    if candidate_id:
-        # Add evidence to existing candidate
-        evidence = {
-            "type": "cv",
-            "file_name": file.filename,
-            "content": parsed_text,
-            "uploaded_at": now
-        }
+    # Check for duplicates BEFORE creating (unless force_create or merge_target specified)
+    if not force_create and not merge_target_id:
+        # Run duplicate detection
+        duplicates = await _find_duplicates(company_id, email, phone, name)
+        
+        if duplicates:
+            return {
+                "status": "duplicate_warning",
+                "candidate": None,
+                "duplicates": duplicates,
+                "extracted_info": {
+                    "name": name,
+                    "email": email,
+                    "phone": phone
+                },
+                "evidence_preview": [{"type": e["type"], "pages": e.get("pages", [])} for e in evidence_list],
+                "message": f"Found {len(duplicates)} potential duplicate(s). Choose to merge, create new, or cancel."
+            }
+    
+    # Handle merge request
+    if merge_target_id:
+        target = await db.candidates.find_one(
+            {"id": merge_target_id, "company_id": company_id}
+        )
+        if not target:
+            raise HTTPException(status_code=404, detail="Merge target candidate not found")
+        
+        # Append evidence to target
+        evidence_to_add = []
+        for ev in evidence_list:
+            evidence_to_add.append({
+                "type": ev["type"],
+                "file_name": ev["file_name"],
+                "content": ev["content"],
+                "uploaded_at": now,
+                "source": "merge_upload",
+                "pages": ev.get("pages", [])
+            })
         
         await db.candidates.update_one(
-            {"id": candidate_id, "company_id": current_user["company_id"]},
-            {"$push": {"evidence": evidence}, "$set": {"updated_at": now}}
+            {"id": merge_target_id},
+            {
+                "$push": {"evidence": {"$each": evidence_to_add}},
+                "$set": {"updated_at": now}
+            }
         )
         
-        candidate = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
-        return CandidateResponse(**candidate)
-    else:
-        # Create new candidate with CV
-        candidate_id = str(uuid.uuid4())
-        candidate = {
-            "id": candidate_id,
-            "company_id": current_user["company_id"],
-            "name": name,
-            "email": email,
-            "phone": phone,
-            "evidence": [{
-                "type": "cv",
-                "file_name": file.filename,
-                "content": parsed_text,
-                "uploaded_at": now
-            }],
-            "created_at": now,
-            "updated_at": now
+        # Log the merge
+        merge_log = {
+            "id": str(uuid.uuid4()),
+            "action": "evidence_merge",
+            "target_id": merge_target_id,
+            "target_name": target.get("name", ""),
+            "file_name": file.filename,
+            "evidence_transferred": len(evidence_to_add),
+            "merged_by": current_user["id"],
+            "company_id": company_id,
+            "merged_at": now
         }
+        await db.merge_logs.insert_one(merge_log)
         
-        await db.candidates.insert_one(candidate)
-        return CandidateResponse(**candidate)
+        updated = await db.candidates.find_one({"id": merge_target_id}, {"_id": 0})
+        return {
+            "status": "merged",
+            "candidate": CandidateResponse(**updated),
+            "evidence_added": len(evidence_to_add),
+            "evidence_types": [e["type"] for e in evidence_to_add],
+            "message": f"Merged {len(evidence_to_add)} evidence file(s) into existing candidate"
+        }
+    
+    # Create new candidate with split evidence
+    new_candidate_id = str(uuid.uuid4())
+    
+    evidence_to_add = []
+    for ev in evidence_list:
+        evidence_to_add.append({
+            "type": ev["type"],
+            "file_name": ev["file_name"],
+            "content": ev["content"],
+            "uploaded_at": now,
+            "source": "pdf_upload",
+            "pages": ev.get("pages", [])
+        })
+    
+    candidate = {
+        "id": new_candidate_id,
+        "company_id": company_id,
+        "name": name,
+        "email": email,
+        "phone": phone,
+        "evidence": evidence_to_add,
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    await db.candidates.insert_one(candidate)
+    
+    return {
+        "status": "created",
+        "candidate": CandidateResponse(**candidate),
+        "evidence_added": len(evidence_to_add),
+        "evidence_types": [e["type"] for e in evidence_to_add]
+    }
+
+# Helper function for duplicate detection
+async def _find_duplicates(company_id: str, email: str, phone: str, name: str) -> List[Dict]:
+    """Find duplicate candidates based on email, phone, or name+email match."""
+    
+    duplicates = []
+    seen_ids = set()
+    
+    # Normalize values for comparison
+    norm_email = email.lower().strip() if email else ""
+    norm_phone = re.sub(r'\D', '', phone) if phone else ""
+    norm_name = ' '.join(name.lower().split()) if name else ""
+    
+    # Get all candidates for this company
+    candidates = await db.candidates.find(
+        {"company_id": company_id},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1}
+    ).to_list(10000)
+    
+    for cand in candidates:
+        if cand["id"] in seen_ids:
+            continue
+            
+        match_reasons = []
+        cand_email = (cand.get("email") or "").lower().strip()
+        cand_phone = re.sub(r'\D', '', cand.get("phone") or "")
+        cand_name = ' '.join((cand.get("name") or "").lower().split())
+        
+        # Rule 1: Email match (case-insensitive)
+        if norm_email and cand_email and norm_email == cand_email:
+            match_reasons.append("email_match")
+        
+        # Rule 2: Phone match (normalized - check last 7+ digits)
+        if norm_phone and cand_phone and len(norm_phone) >= 7 and len(cand_phone) >= 7:
+            if norm_phone[-7:] == cand_phone[-7:] or norm_phone == cand_phone:
+                match_reasons.append("phone_match")
+        
+        # Rule 3: Email + Name match
+        if norm_email and norm_name and cand_email and cand_name:
+            if norm_email == cand_email and norm_name == cand_name:
+                if "email_match" not in match_reasons:
+                    match_reasons.append("email_match")
+                match_reasons.append("name_match")
+        
+        if match_reasons:
+            seen_ids.add(cand["id"])
+            
+            # Determine confidence
+            if "email_match" in match_reasons:
+                confidence = "high"
+            elif "phone_match" in match_reasons:
+                confidence = "medium"
+            else:
+                confidence = "medium"
+            
+            duplicates.append({
+                "candidate_id": cand["id"],
+                "candidate_name": cand.get("name", ""),
+                "candidate_email": cand.get("email", ""),
+                "candidate_phone": cand.get("phone", ""),
+                "match_reasons": match_reasons,
+                "confidence": confidence
+            })
+    
+    return duplicates
 
 @api_router.post("/candidates/{candidate_id}/upload-evidence")
 async def upload_evidence(
