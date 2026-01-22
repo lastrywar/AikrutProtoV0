@@ -284,6 +284,91 @@ export const Candidates = () => {
     }
   };
 
+  // NEW: Handle ZIP file upload
+  const handleZipSelect = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    if (!file.name.toLowerCase().endsWith('.zip')) {
+      toast.error('Please select a ZIP file');
+      return;
+    }
+    
+    setZipUploading(true);
+    setPendingZipFile(file);
+    
+    try {
+      // First try without force_create to check for duplicates
+      const res = await candidatesAPI.uploadZip(file, false);
+      
+      if (res.data.status === 'duplicate_warning') {
+        // Show duplicate dialog for ZIP
+        setZipDuplicates(res.data);
+        setShowZipDuplicateDialog(true);
+      } else if (res.data.status === 'created') {
+        toast.success(res.data.message);
+        loadCandidates();
+        setShowUploadDialog(false);
+      } else {
+        toast.error(res.data.message || 'Upload failed');
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'ZIP upload failed');
+    } finally {
+      setZipUploading(false);
+      if (zipInputRef.current) {
+        zipInputRef.current.value = '';
+      }
+    }
+  };
+
+  // NEW: Force create after duplicate warning
+  const handleZipForceCreate = async () => {
+    if (!pendingZipFile) return;
+    
+    setZipUploading(true);
+    try {
+      const res = await candidatesAPI.uploadZip(pendingZipFile, true);
+      toast.success(res.data.message || 'Candidate created');
+      setShowZipDuplicateDialog(false);
+      setZipDuplicates(null);
+      setPendingZipFile(null);
+      loadCandidates();
+      setShowUploadDialog(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Upload failed');
+    } finally {
+      setZipUploading(false);
+    }
+  };
+
+  // NEW: Merge ZIP candidate into existing
+  const handleZipMerge = async (targetCandidateId) => {
+    if (!pendingZipFile) return;
+    
+    setZipUploading(true);
+    try {
+      // First force create the candidate
+      const createRes = await candidatesAPI.uploadZip(pendingZipFile, true);
+      
+      if (createRes.data.status === 'created' && createRes.data.candidate) {
+        // Then merge into target
+        const mergeRes = await candidatesAPI.merge(createRes.data.candidate.id, targetCandidateId);
+        toast.success(`Merged into existing candidate. ${mergeRes.data.evidence_transferred} evidence file(s) transferred.`);
+      }
+      
+      setShowZipDuplicateDialog(false);
+      setZipDuplicates(null);
+      setPendingZipFile(null);
+      loadCandidates();
+      setShowUploadDialog(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Merge failed');
+    } finally {
+      setZipUploading(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this candidate?')) return;
     
