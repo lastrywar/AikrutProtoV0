@@ -1327,35 +1327,86 @@ async def _find_duplicates(company_id: str, email: str, phone: str, name: str) -
 async def upload_evidence(
     candidate_id: str,
     file: UploadFile = File(...),
-    evidence_type: str = Form(...),  # psychotest, knowledge_test
+    evidence_type: str = Form("auto"),  # "auto" for automatic detection, or explicit type
     current_user: dict = Depends(get_current_user)
 ):
+    """
+    Upload evidence to existing candidate with automatic splitting for PDFs.
+    
+    If evidence_type="auto" and file is PDF:
+    - Split PDF into multiple evidence entries based on content
+    - Each section is classified (cv, certificate, diploma, etc.)
+    
+    If evidence_type is explicit (e.g., "psychotest"):
+    - Use that type for all pages (no splitting by type)
+    """
     candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user.get("company_id")})
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     
     content = await file.read()
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Get AI settings for evidence classification
+    settings = await get_ai_settings(current_user["id"])
     
     if file.filename.lower().endswith('.pdf'):
-        parsed_text = parse_pdf(content)
+        if evidence_type == "auto":
+            # Split PDF into evidence types
+            evidence_list = await split_pdf_into_evidence(
+                content, 
+                file.filename,
+                settings.openrouter_api_key if settings else None,
+                settings.model_name if settings else None
+            )
+            
+            # Add timestamps
+            evidence_to_add = []
+            for ev in evidence_list:
+                evidence_to_add.append({
+                    "type": ev["type"],
+                    "file_name": ev["file_name"],
+                    "content": ev["content"],
+                    "uploaded_at": now,
+                    "source": "evidence_upload",
+                    "pages": ev.get("pages", [])
+                })
+        else:
+            # Use explicit type for entire PDF
+            parsed_text = parse_pdf(content)
+            evidence_to_add = [{
+                "type": evidence_type,
+                "file_name": file.filename,
+                "content": parsed_text,
+                "uploaded_at": now,
+                "source": "evidence_upload"
+            }]
     else:
+        # Non-PDF file
         parsed_text = content.decode('utf-8', errors='ignore')
-    
-    now = datetime.now(timezone.utc).isoformat()
-    evidence = {
-        "type": evidence_type,
-        "file_name": file.filename,
-        "content": parsed_text,
-        "uploaded_at": now
-    }
+        evidence_to_add = [{
+            "type": evidence_type if evidence_type != "auto" else "other",
+            "file_name": file.filename,
+            "content": parsed_text,
+            "uploaded_at": now,
+            "source": "evidence_upload"
+        }]
     
     await db.candidates.update_one(
         {"id": candidate_id},
-        {"$push": {"evidence": evidence}, "$set": {"updated_at": now}}
+        {
+            "$push": {"evidence": {"$each": evidence_to_add}},
+            "$set": {"updated_at": now}
+        }
     )
     
     updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
-    return CandidateResponse(**updated)
+    return {
+        "status": "updated",
+        "candidate": CandidateResponse(**updated),
+        "evidence_added": len(evidence_to_add),
+        "evidence_types": [e["type"] for e in evidence_to_add]
+    }
 
 # ==================== ANALYSIS ROUTES ====================
 
