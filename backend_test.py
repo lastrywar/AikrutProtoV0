@@ -741,6 +741,14 @@ startxref
         self.test_merge_candidates()
         self.test_merge_logs()
         
+        # UPDATED Upload-CV Endpoint Tests
+        print("\n📄 UPDATED Upload-CV Endpoint Tests")
+        self.test_upload_cv_first_time()
+        self.test_upload_cv_duplicate_detection()
+        self.test_upload_cv_force_create()
+        self.test_upload_cv_merge_into_existing()
+        self.test_upload_cv_to_existing_candidate()
+        
         # Settings Tests
         print("\n⚙️ Settings Tests")
         self.test_get_settings()
