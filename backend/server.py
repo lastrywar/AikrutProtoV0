@@ -2682,17 +2682,14 @@ Rules:
             
             # Run duplicate detection BEFORE creating
             if not force_create:
-                dup_response = await detect_duplicates(
-                    DuplicateDetectionRequest(email=email, phone=phone, name=name),
-                    current_user
-                )
+                duplicates = await _find_duplicates(company_id, email, phone, name)
                 
-                if dup_response.has_duplicates:
+                if duplicates:
                     return ZipUploadResponse(
                         status="duplicate_warning",
                         candidate=None,
-                        duplicates=dup_response.matches,
-                        message=f"Found {len(dup_response.matches)} potential duplicate(s). Review and choose to merge or create new.",
+                        duplicates=[DuplicateMatch(**d) for d in duplicates],
+                        message=f"Found {len(duplicates)} potential duplicate(s). Review and choose to merge or create new.",
                         files_processed=1 + len(evidence_files),
                         evidence_attached=0
                     )
@@ -2701,37 +2698,72 @@ Rules:
             now = datetime.now(timezone.utc).isoformat()
             candidate_id = str(uuid.uuid4())
             
-            # Build evidence list
-            evidence_list = [{
-                "type": "cv",
-                "file_name": cv_file.split('/')[-1],
-                "content": parsed_text,
-                "uploaded_at": now,
-                "source": "zip_upload"
-            }]
+            # Build evidence list - use evidence splitting for CV
+            cv_evidence = await split_pdf_into_evidence(
+                cv_content, 
+                cv_file.split('/')[-1],
+                settings.openrouter_api_key if settings else None,
+                settings.model_name if settings else None
+            )
             
-            # Add additional evidence files
+            evidence_list = []
+            for ev in cv_evidence:
+                evidence_list.append({
+                    "type": ev["type"],
+                    "file_name": ev["file_name"],
+                    "content": ev["content"],
+                    "uploaded_at": now,
+                    "source": "zip_upload",
+                    "pages": ev.get("pages", [])
+                })
+            
+            # Add additional evidence files (with splitting for PDFs)
             for ev_file in evidence_files:
                 if ev_file["content"]:
-                    # Parse PDF or decode text
                     if ev_file["name"].lower().endswith('.pdf'):
                         try:
-                            ev_content = parse_pdf(ev_file["content"])
+                            # Split this PDF too
+                            split_evidence = await split_pdf_into_evidence(
+                                ev_file["content"],
+                                ev_file["name"].split('/')[-1],
+                                settings.openrouter_api_key if settings else None,
+                                settings.model_name if settings else None
+                            )
+                            for sev in split_evidence:
+                                evidence_list.append({
+                                    "type": sev["type"],
+                                    "file_name": sev["file_name"],
+                                    "content": sev["content"],
+                                    "uploaded_at": now,
+                                    "source": "zip_upload",
+                                    "pages": sev.get("pages", [])
+                                })
                         except Exception:
-                            ev_content = "[Binary PDF - parsing failed]"
+                            # Fallback: use original categorization
+                            try:
+                                ev_content = parse_pdf(ev_file["content"])
+                                evidence_list.append({
+                                    "type": ev_file["type"],
+                                    "file_name": ev_file["name"].split('/')[-1],
+                                    "content": ev_content,
+                                    "uploaded_at": now,
+                                    "source": "zip_upload"
+                                })
+                            except Exception:
+                                pass
                     else:
                         try:
                             ev_content = ev_file["content"].decode('utf-8', errors='ignore')
                         except Exception:
                             ev_content = "[Binary content]"
-                    
-                    evidence_list.append({
-                        "type": ev_file["type"],
-                        "file_name": ev_file["name"].split('/')[-1],
-                        "content": ev_content,
-                        "uploaded_at": now,
-                        "source": "zip_upload"
-                    })
+                        
+                        evidence_list.append({
+                            "type": ev_file["type"],
+                            "file_name": ev_file["name"].split('/')[-1],
+                            "content": ev_content,
+                            "uploaded_at": now,
+                            "source": "zip_upload"
+                        })
             
             candidate = {
                 "id": candidate_id,
