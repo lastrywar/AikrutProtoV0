@@ -1773,6 +1773,539 @@ async def get_recent_activity(current_user: dict = Depends(get_current_user)):
     activities.sort(key=lambda x: x["timestamp"], reverse=True)
     return activities[:10]
 
+# ==================== EXTENSION: ZIP UPLOAD & DUPLICATE DETECTION ====================
+# NOTE: These endpoints are ADDITIVE and do not modify existing flows
+# Existing upload-cv and check-duplicates endpoints remain unchanged
+
+import zipfile
+import re
+
+# Helper: Normalize phone number for comparison (strip all non-digits)
+def normalize_phone(phone: str) -> str:
+    """Normalize phone number by removing all non-digit characters"""
+    if not phone:
+        return ""
+    return re.sub(r'\D', '', phone)
+
+# Helper: Normalize email for comparison (lowercase, strip whitespace)
+def normalize_email(email: str) -> str:
+    """Normalize email for comparison"""
+    if not email:
+        return ""
+    return email.lower().strip()
+
+# Helper: Normalize name for comparison (lowercase, strip extra whitespace)
+def normalize_name(name: str) -> str:
+    """Normalize name for comparison"""
+    if not name:
+        return ""
+    return ' '.join(name.lower().split())
+
+# Models for new endpoints
+class DuplicateDetectionRequest(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    name: Optional[str] = None
+
+class DuplicateMatch(BaseModel):
+    candidate_id: str
+    candidate_name: str
+    candidate_email: str
+    candidate_phone: str
+    match_reasons: List[str]
+    confidence: str  # "high", "medium"
+
+class DuplicateDetectionResponse(BaseModel):
+    has_duplicates: bool
+    matches: List[DuplicateMatch]
+
+class MergeRequest(BaseModel):
+    source_candidate_id: str
+    target_candidate_id: str
+
+class MergeLogEntry(BaseModel):
+    action: str
+    source_id: str
+    target_id: str
+    source_name: str
+    target_name: str
+    evidence_transferred: int
+    merged_by: str
+    merged_at: str
+
+@api_router.post("/candidates/detect-duplicates", response_model=DuplicateDetectionResponse)
+async def detect_duplicates(
+    data: DuplicateDetectionRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Enhanced duplicate detection using hard rules.
+    
+    Checks for duplicates based on:
+    1. Email match (case-insensitive)
+    2. Phone match (normalized - digits only)
+    3. Email + Name match combination
+    
+    Returns potential duplicates with match reasons for HR decision.
+    Does NOT auto-merge - waits for explicit merge request.
+    """
+    if not current_user.get("company_id"):
+        return DuplicateDetectionResponse(has_duplicates=False, matches=[])
+    
+    company_id = current_user["company_id"]
+    matches = []
+    
+    # Normalize input values
+    input_email = normalize_email(data.email) if data.email else ""
+    input_phone = normalize_phone(data.phone) if data.phone else ""
+    input_name = normalize_name(data.name) if data.name else ""
+    
+    # Skip if no data provided
+    if not input_email and not input_phone and not input_name:
+        return DuplicateDetectionResponse(has_duplicates=False, matches=[])
+    
+    # Get all candidates for this company
+    candidates = await db.candidates.find(
+        {"company_id": company_id},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "phone": 1}
+    ).to_list(10000)
+    
+    for candidate in candidates:
+        match_reasons = []
+        
+        cand_email = normalize_email(candidate.get("email", ""))
+        cand_phone = normalize_phone(candidate.get("phone", ""))
+        cand_name = normalize_name(candidate.get("name", ""))
+        
+        # Rule 1: Email match (case-insensitive)
+        if input_email and cand_email and input_email == cand_email:
+            match_reasons.append("email_match")
+        
+        # Rule 2: Phone match (normalized)
+        if input_phone and cand_phone and len(input_phone) >= 7 and len(cand_phone) >= 7:
+            # Match if last 7+ digits are the same (handles country code differences)
+            if input_phone[-7:] == cand_phone[-7:] or input_phone == cand_phone:
+                match_reasons.append("phone_match")
+        
+        # Rule 3: Email + Name combination match
+        if input_email and input_name and cand_email and cand_name:
+            if input_email == cand_email and input_name == cand_name:
+                if "email_match" not in match_reasons:
+                    match_reasons.append("email_match")
+                match_reasons.append("name_match")
+        
+        if match_reasons:
+            # Determine confidence
+            if "email_match" in match_reasons and ("phone_match" in match_reasons or "name_match" in match_reasons):
+                confidence = "high"
+            elif "email_match" in match_reasons:
+                confidence = "high"
+            elif "phone_match" in match_reasons:
+                confidence = "medium"
+            else:
+                confidence = "medium"
+            
+            matches.append(DuplicateMatch(
+                candidate_id=candidate["id"],
+                candidate_name=candidate.get("name", ""),
+                candidate_email=candidate.get("email", ""),
+                candidate_phone=candidate.get("phone", ""),
+                match_reasons=match_reasons,
+                confidence=confidence
+            ))
+    
+    return DuplicateDetectionResponse(
+        has_duplicates=len(matches) > 0,
+        matches=matches
+    )
+
+@api_router.post("/candidates/merge")
+async def merge_candidates(
+    data: MergeRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Merge two candidates.
+    
+    - Appends all evidence from source candidate to target candidate
+    - Does NOT overwrite any existing target candidate fields
+    - Logs the merge action for audit purposes
+    - Deletes the source candidate after successful merge
+    
+    Returns the updated target candidate.
+    """
+    if not current_user.get("company_id"):
+        raise HTTPException(status_code=400, detail="Create a company first")
+    
+    company_id = current_user["company_id"]
+    
+    # Fetch source candidate
+    source = await db.candidates.find_one(
+        {"id": data.source_candidate_id, "company_id": company_id},
+        {"_id": 0}
+    )
+    if not source:
+        raise HTTPException(status_code=404, detail="Source candidate not found")
+    
+    # Fetch target candidate
+    target = await db.candidates.find_one(
+        {"id": data.target_candidate_id, "company_id": company_id},
+        {"_id": 0}
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="Target candidate not found")
+    
+    # Prevent self-merge
+    if data.source_candidate_id == data.target_candidate_id:
+        raise HTTPException(status_code=400, detail="Cannot merge candidate with itself")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    source_evidence = source.get("evidence", [])
+    
+    # Append source evidence to target (do NOT overwrite existing)
+    if source_evidence:
+        # Mark transferred evidence with merge metadata
+        for ev in source_evidence:
+            ev["merged_from"] = data.source_candidate_id
+            ev["merged_at"] = now
+        
+        await db.candidates.update_one(
+            {"id": data.target_candidate_id},
+            {
+                "$push": {"evidence": {"$each": source_evidence}},
+                "$set": {"updated_at": now}
+            }
+        )
+    
+    # Create merge log entry
+    merge_log = {
+        "id": str(uuid.uuid4()),
+        "action": "candidate_merge",
+        "source_id": data.source_candidate_id,
+        "target_id": data.target_candidate_id,
+        "source_name": source.get("name", ""),
+        "target_name": target.get("name", ""),
+        "source_email": source.get("email", ""),
+        "target_email": target.get("email", ""),
+        "evidence_transferred": len(source_evidence),
+        "merged_by": current_user["id"],
+        "merged_by_name": current_user.get("name", ""),
+        "company_id": company_id,
+        "merged_at": now
+    }
+    await db.merge_logs.insert_one(merge_log)
+    
+    # Delete source candidate
+    await db.candidates.delete_one({"id": data.source_candidate_id})
+    
+    # Fetch and return updated target
+    updated_target = await db.candidates.find_one({"id": data.target_candidate_id}, {"_id": 0})
+    
+    logger.info(f"Merged candidate {data.source_candidate_id} into {data.target_candidate_id}")
+    
+    return {
+        "message": "Candidates merged successfully",
+        "target_candidate": CandidateResponse(**updated_target),
+        "evidence_transferred": len(source_evidence),
+        "merge_log_id": merge_log["id"]
+    }
+
+@api_router.get("/candidates/merge-logs")
+async def get_merge_logs(
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Get merge audit logs for the company.
+    """
+    if not current_user.get("company_id"):
+        return []
+    
+    logs = await db.merge_logs.find(
+        {"company_id": current_user["company_id"]},
+        {"_id": 0}
+    ).sort("merged_at", -1).limit(limit).to_list(limit)
+    
+    return logs
+
+class ZipUploadResponse(BaseModel):
+    status: str  # "created", "duplicate_warning", "error"
+    candidate: Optional[CandidateResponse] = None
+    duplicates: Optional[List[DuplicateMatch]] = None
+    message: str
+    files_processed: int
+    evidence_attached: int
+
+@api_router.post("/candidates/upload-zip", response_model=ZipUploadResponse)
+async def upload_zip(
+    file: UploadFile = File(...),
+    force_create: bool = Form(False),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    NEW ENDPOINT: Upload a ZIP file containing candidate evidence.
+    
+    One ZIP file = one candidate
+    
+    Expected ZIP structure:
+    - CV/resume PDF (required): looked for in root or cv/ folder
+    - Additional evidence: psychotest/, knowledge_test/, or evidence/ folders
+    
+    Process:
+    1. Extract ZIP contents
+    2. Find and parse CV to get candidate info
+    3. Run duplicate detection BEFORE creating candidate
+    4. If duplicates found and force_create=False: return warning
+    5. If no duplicates or force_create=True: create candidate with all evidence
+    
+    Reuses existing PDF parsing logic.
+    """
+    if not current_user.get("company_id"):
+        raise HTTPException(status_code=400, detail="Create a company first")
+    
+    if not file.filename.lower().endswith('.zip'):
+        raise HTTPException(status_code=400, detail="Only ZIP files are supported")
+    
+    company_id = current_user["company_id"]
+    content = await file.read()
+    
+    try:
+        zip_buffer = io.BytesIO(content)
+        with zipfile.ZipFile(zip_buffer, 'r') as zf:
+            file_list = zf.namelist()
+            
+            # Find CV file (PDF in root or cv/ folder)
+            cv_file = None
+            cv_content = None
+            evidence_files = []
+            
+            for fname in file_list:
+                # Skip directories and hidden files
+                if fname.endswith('/') or fname.startswith('__MACOSX') or '/.' in fname:
+                    continue
+                
+                lower_fname = fname.lower()
+                base_name = fname.split('/')[-1].lower()
+                
+                # Identify CV file
+                if lower_fname.endswith('.pdf'):
+                    # Priority: files in root or cv/ folder, or with cv/resume in name
+                    is_cv = (
+                        '/' not in fname or  # Root level
+                        fname.lower().startswith('cv/') or
+                        fname.lower().startswith('resume/') or
+                        'cv' in base_name or
+                        'resume' in base_name
+                    )
+                    
+                    if is_cv and cv_file is None:
+                        cv_file = fname
+                        cv_content = zf.read(fname)
+                    else:
+                        # Treat as additional evidence
+                        evidence_files.append({
+                            "name": fname,
+                            "content": zf.read(fname),
+                            "type": categorize_evidence(fname)
+                        })
+                elif lower_fname.endswith(('.txt', '.doc', '.docx')):
+                    # Other document types as evidence
+                    evidence_files.append({
+                        "name": fname,
+                        "content": zf.read(fname),
+                        "type": categorize_evidence(fname)
+                    })
+            
+            if not cv_file or not cv_content:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="No CV/resume PDF found in ZIP. Please include a PDF file in the root or cv/ folder."
+                )
+            
+            # Parse CV using existing function
+            parsed_text = parse_pdf(cv_content)
+            if not parsed_text:
+                raise HTTPException(status_code=400, detail="Could not extract text from CV PDF")
+            
+            # Extract candidate info (reuse existing AI/fallback logic)
+            settings = await get_ai_settings(current_user["id"])
+            admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+            
+            name = ""
+            email = ""
+            phone = ""
+            
+            # AI parsing
+            if settings.openrouter_api_key:
+                try:
+                    cv_parse_prompt = admin_settings.get("cv_parse_prompt") if admin_settings else None
+                    
+                    if cv_parse_prompt:
+                        prompt = cv_parse_prompt.format(cv_text=parsed_text[:3000])
+                    else:
+                        prompt = f"""Extract contact information from this CV/resume text.
+
+CV TEXT (first 3000 chars):
+{parsed_text[:3000]}
+
+Return ONLY a JSON object with:
+{{
+  "name": "Full name of the candidate",
+  "email": "Email address or empty string if not found",
+  "phone": "Phone number or empty string if not found"
+}}
+
+Rules:
+- Name should be the person's full name, NOT a company name or job title
+- Phone should be a valid phone number format
+- If information is unclear or not found, return empty string
+- Do NOT make up information"""
+
+                    messages = [{"role": "user", "content": prompt}]
+                    response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.1)
+                    
+                    json_start = response.find('{')
+                    json_end = response.rfind('}') + 1
+                    if json_start >= 0 and json_end > json_start:
+                        contact_info = json.loads(response[json_start:json_end])
+                        name = contact_info.get("name", "").strip()
+                        email = contact_info.get("email", "").strip()
+                        phone = contact_info.get("phone", "").strip()
+                except Exception as e:
+                    logger.warning(f"AI CV parsing failed in ZIP upload, using fallback: {e}")
+            
+            # Fallback parsing (same as existing upload-cv)
+            if not name:
+                lines = parsed_text.split('\n')
+                for line in lines[:10]:
+                    line = line.strip()
+                    if line and len(line) > 2 and len(line) < 50:
+                        if not any(c.isdigit() for c in line) and '@' not in line:
+                            name = line
+                            break
+                if not name:
+                    name = "Unknown Candidate"
+            
+            if not email:
+                email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+                emails = re.findall(email_pattern, parsed_text)
+                email = emails[0] if emails else ""
+            
+            if not phone:
+                phone_patterns = [
+                    r'\+?[\d\s\-\(\)]{10,}',
+                    r'\d{3}[\s\-]?\d{3}[\s\-]?\d{4}',
+                    r'\(\d{3}\)\s?\d{3}[\s\-]?\d{4}'
+                ]
+                for pattern in phone_patterns:
+                    phones = re.findall(pattern, parsed_text[:1000])
+                    if phones:
+                        phone = phones[0].strip()
+                        break
+            
+            # Run duplicate detection BEFORE creating
+            if not force_create:
+                dup_response = await detect_duplicates(
+                    DuplicateDetectionRequest(email=email, phone=phone, name=name),
+                    current_user
+                )
+                
+                if dup_response.has_duplicates:
+                    return ZipUploadResponse(
+                        status="duplicate_warning",
+                        candidate=None,
+                        duplicates=dup_response.matches,
+                        message=f"Found {len(dup_response.matches)} potential duplicate(s). Review and choose to merge or create new.",
+                        files_processed=1 + len(evidence_files),
+                        evidence_attached=0
+                    )
+            
+            # Create candidate
+            now = datetime.now(timezone.utc).isoformat()
+            candidate_id = str(uuid.uuid4())
+            
+            # Build evidence list
+            evidence_list = [{
+                "type": "cv",
+                "file_name": cv_file.split('/')[-1],
+                "content": parsed_text,
+                "uploaded_at": now,
+                "source": "zip_upload"
+            }]
+            
+            # Add additional evidence files
+            for ev_file in evidence_files:
+                if ev_file["content"]:
+                    # Parse PDF or decode text
+                    if ev_file["name"].lower().endswith('.pdf'):
+                        try:
+                            ev_content = parse_pdf(ev_file["content"])
+                        except:
+                            ev_content = "[Binary PDF - parsing failed]"
+                    else:
+                        try:
+                            ev_content = ev_file["content"].decode('utf-8', errors='ignore')
+                        except:
+                            ev_content = "[Binary content]"
+                    
+                    evidence_list.append({
+                        "type": ev_file["type"],
+                        "file_name": ev_file["name"].split('/')[-1],
+                        "content": ev_content,
+                        "uploaded_at": now,
+                        "source": "zip_upload"
+                    })
+            
+            candidate = {
+                "id": candidate_id,
+                "company_id": company_id,
+                "name": name,
+                "email": email,
+                "phone": phone,
+                "evidence": evidence_list,
+                "created_at": now,
+                "updated_at": now,
+                "upload_source": "zip"
+            }
+            
+            await db.candidates.insert_one(candidate)
+            
+            logger.info(f"Created candidate {candidate_id} from ZIP upload with {len(evidence_list)} evidence files")
+            
+            return ZipUploadResponse(
+                status="created",
+                candidate=CandidateResponse(**candidate),
+                duplicates=None,
+                message=f"Candidate created successfully with {len(evidence_list)} evidence file(s)",
+                files_processed=1 + len(evidence_files),
+                evidence_attached=len(evidence_list)
+            )
+    
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"ZIP upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process ZIP file: {str(e)}")
+
+def categorize_evidence(filename: str) -> str:
+    """Helper: Categorize evidence file based on path/name"""
+    lower = filename.lower()
+    
+    if 'psycho' in lower or 'personality' in lower or 'assessment' in lower:
+        return 'psychotest'
+    elif 'knowledge' in lower or 'test' in lower or 'exam' in lower or 'quiz' in lower:
+        return 'knowledge_test'
+    elif 'cert' in lower or 'certificate' in lower or 'diploma' in lower:
+        return 'certificate'
+    elif 'portfolio' in lower or 'work' in lower or 'sample' in lower:
+        return 'portfolio'
+    elif 'reference' in lower or 'recommendation' in lower:
+        return 'reference'
+    else:
+        return 'other'
+
 # Include router and middleware
 app.include_router(api_router)
 
