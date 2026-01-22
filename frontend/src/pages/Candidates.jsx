@@ -96,6 +96,13 @@ export const Candidates = () => {
     return file.name;
   };
 
+  // NEW: State for PDF duplicate handling
+  const [pdfDuplicates, setPdfDuplicates] = useState(null);
+  const [showPdfDuplicateDialog, setShowPdfDuplicateDialog] = useState(false);
+  const [pendingPdfFile, setPendingPdfFile] = useState(null);
+  const [selectedPdfMergeTarget, setSelectedPdfMergeTarget] = useState(null);
+  const [extractedInfo, setExtractedInfo] = useState(null);
+
   const handleFileSelect = async (event) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -109,34 +116,147 @@ export const Candidates = () => {
 
     // If adding to existing candidate, skip duplicate check
     if (selectedCandidate) {
-      await uploadFiles(pdfFiles, selectedCandidate.id);
+      await uploadFilesToExisting(pdfFiles, selectedCandidate.id);
       return;
     }
 
-    // For new uploads, we need to check for duplicates after parsing
-    // First, upload one file to get parsed info, then check
+    // For new uploads, process each file with duplicate detection
     setPendingFiles(pdfFiles);
-    
-    if (pdfFiles.length === 1) {
-      // Single file - just upload
-      await uploadFiles(pdfFiles);
-    } else {
-      // Multiple files - show progress and handle duplicates
-      await handleBulkUpload(pdfFiles);
+    await handlePdfUploadsWithDuplicateDetection(pdfFiles);
+  };
+
+  // NEW: Handle PDF uploads with duplicate detection
+  const handlePdfUploadsWithDuplicateDetection = async (files) => {
+    setUploading(true);
+    let successCount = 0;
+    let duplicateCount = 0;
+
+    try {
+      for (const file of files) {
+        try {
+          // Upload without force_create to check for duplicates first
+          const res = await candidatesAPI.uploadCV(file, null, false, null);
+          
+          if (res.data.status === 'duplicate_warning') {
+            // Show duplicate dialog for this file
+            setPdfDuplicates(res.data);
+            setExtractedInfo(res.data.extracted_info);
+            setPendingPdfFile(file);
+            setShowPdfDuplicateDialog(true);
+            duplicateCount++;
+            // Stop processing - user needs to decide
+            break;
+          } else if (res.data.status === 'created') {
+            successCount++;
+            const evidenceTypes = res.data.evidence_types || ['cv'];
+            toast.success(`Uploaded ${file.name}: ${res.data.evidence_added} evidence(s) detected (${evidenceTypes.join(', ')})`);
+          }
+        } catch (error) {
+          toast.error(`Failed to upload ${file.name}: ${error.response?.data?.detail || 'Error'}`);
+        }
+      }
+
+      if (successCount > 0) {
+        loadCandidates();
+      }
+      
+      // Only close dialog if no duplicates pending
+      if (duplicateCount === 0) {
+        setShowUploadDialog(false);
+        setSelectedCandidate(null);
+      }
+    } catch (error) {
+      toast.error('Upload failed');
+    } finally {
+      setUploading(false);
+      setPendingFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
-  const handleBulkUpload = async (files) => {
+  // Upload files to existing candidate (no duplicate check needed)
+  const uploadFilesToExisting = async (files, candidateId) => {
     setUploading(true);
-    const results = [];
-    const potentialDuplicates = [];
-
     try {
-      // First pass: upload all files and collect results
       for (const file of files) {
-        try {
-          const res = await candidatesAPI.uploadCV(file);
-          results.push({ file, candidate: res.data, status: 'created' });
+        const res = await candidatesAPI.uploadCV(file, candidateId);
+        const evidenceTypes = res.data.evidence_types || ['cv'];
+        toast.success(`Uploaded ${file.name}: ${res.data.evidence_added || 1} evidence(s) (${evidenceTypes.join(', ')})`);
+      }
+      loadCandidates();
+      setShowUploadDialog(false);
+      setSelectedCandidate(null);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Handle PDF duplicate - create new anyway
+  const handlePdfForceCreate = async () => {
+    if (!pendingPdfFile) return;
+    
+    setUploading(true);
+    try {
+      const res = await candidatesAPI.uploadCV(pendingPdfFile, null, true, null);
+      const evidenceTypes = res.data.evidence_types || ['cv'];
+      toast.success(`Created new candidate with ${res.data.evidence_added} evidence(s) (${evidenceTypes.join(', ')})`);
+      setShowPdfDuplicateDialog(false);
+      setPdfDuplicates(null);
+      setPendingPdfFile(null);
+      setSelectedPdfMergeTarget(null);
+      setExtractedInfo(null);
+      loadCandidates();
+      setShowUploadDialog(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Handle PDF duplicate - merge into existing
+  const handlePdfMerge = async (targetCandidateId) => {
+    if (!pendingPdfFile) return;
+    
+    setUploading(true);
+    try {
+      const res = await candidatesAPI.uploadCV(pendingPdfFile, null, false, targetCandidateId);
+      const evidenceTypes = res.data.evidence_types || [];
+      toast.success(`Merged ${res.data.evidence_added} evidence(s) into existing candidate (${evidenceTypes.join(', ')})`);
+      setShowPdfDuplicateDialog(false);
+      setPdfDuplicates(null);
+      setPendingPdfFile(null);
+      setSelectedPdfMergeTarget(null);
+      setExtractedInfo(null);
+      loadCandidates();
+      setShowUploadDialog(false);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Merge failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Legacy function - kept for backward compatibility with bulk upload
+  const handleBulkUpload = async (files) => {
+    await handlePdfUploadsWithDuplicateDetection(files);
+  };
+
+  // Legacy function - kept for backward compatibility  
+  const uploadFiles = async (files, candidateId = null) => {
+    if (candidateId) {
+      await uploadFilesToExisting(files, candidateId);
+    } else {
+      await handlePdfUploadsWithDuplicateDetection(files);
+    }
+  };
         } catch (error) {
           results.push({ file, error: error.response?.data?.detail || 'Upload failed', status: 'error' });
         }
