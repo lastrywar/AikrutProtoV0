@@ -583,42 +583,100 @@ export const Candidates = () => {
 
         {/* Upload Dialog */}
         <Dialog open={showUploadDialog} onOpenChange={setShowUploadDialog}>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="font-heading">
-                {selectedCandidate ? `Add Evidence for ${selectedCandidate.name}` : 'Upload CVs'}
+                {selectedCandidate ? `Add Evidence for ${selectedCandidate.name}` : 'Upload Candidates'}
               </DialogTitle>
               <DialogDescription>
                 {selectedCandidate 
                   ? 'Upload additional documents (CV, psychotest, knowledge test)'
-                  : 'Upload PDF files to create new candidate profiles. Duplicates will be detected by email.'}
+                  : 'Upload PDF files for multiple candidates, or a ZIP file for one candidate with multiple evidence files.'}
               </DialogDescription>
             </DialogHeader>
             
-            <div className="space-y-4 pt-4">
-              <div 
-                className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-300 transition-colors cursor-pointer"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf"
-                  multiple
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  data-testid="file-input"
-                />
-                {uploading ? (
-                  <Loader2 className="w-8 h-8 mx-auto mb-2 text-indigo-500 animate-spin" />
-                ) : (
-                  <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
-                )}
-                <p className="font-medium text-slate-700">
-                  {uploading ? 'Uploading...' : 'Click to upload PDF files'}
-                </p>
-                <p className="text-sm text-slate-500 mt-1">Supports multiple files</p>
+            {!selectedCandidate && (
+              <div className="flex gap-2 mb-4">
+                <Button
+                  variant={uploadMode === 'pdf' ? 'default' : 'outline'}
+                  onClick={() => setUploadMode('pdf')}
+                  className={`flex-1 rounded-full ${uploadMode === 'pdf' ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : ''}`}
+                  size="sm"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  PDF Files
+                </Button>
+                <Button
+                  variant={uploadMode === 'zip' ? 'default' : 'outline'}
+                  onClick={() => setUploadMode('zip')}
+                  className={`flex-1 rounded-full ${uploadMode === 'zip' ? 'bg-indigo-500 hover:bg-indigo-600 text-white' : ''}`}
+                  size="sm"
+                >
+                  <FolderArchive className="w-4 h-4 mr-2" />
+                  ZIP Package
+                </Button>
               </div>
+            )}
+            
+            <div className="space-y-4 pt-2">
+              {uploadMode === 'pdf' || selectedCandidate ? (
+                <div 
+                  className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-300 transition-colors cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    data-testid="file-input"
+                  />
+                  {uploading ? (
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 text-indigo-500 animate-spin" />
+                  ) : (
+                    <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                  )}
+                  <p className="font-medium text-slate-700">
+                    {uploading ? 'Uploading...' : 'Click to upload PDF files'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    {selectedCandidate ? 'Add documents to this candidate' : 'Each PDF creates one candidate'}
+                  </p>
+                </div>
+              ) : (
+                <div 
+                  className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-300 transition-colors cursor-pointer"
+                  onClick={() => zipInputRef.current?.click()}
+                >
+                  <input
+                    ref={zipInputRef}
+                    type="file"
+                    accept=".zip"
+                    onChange={handleZipSelect}
+                    className="hidden"
+                    data-testid="zip-input"
+                  />
+                  {zipUploading ? (
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 text-indigo-500 animate-spin" />
+                  ) : (
+                    <FolderArchive className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                  )}
+                  <p className="font-medium text-slate-700">
+                    {zipUploading ? 'Processing ZIP...' : 'Click to upload ZIP file'}
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">One ZIP = One candidate with multiple evidence</p>
+                  <div className="mt-4 text-xs text-slate-400 bg-slate-50 rounded-lg p-3 text-left">
+                    <p className="font-medium mb-1">Expected ZIP structure:</p>
+                    <ul className="list-disc list-inside space-y-0.5">
+                      <li>CV/resume.pdf (required, in root or cv/ folder)</li>
+                      <li>psychotest/*.pdf (optional)</li>
+                      <li>knowledge_test/*.pdf (optional)</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
               
               <div className="flex justify-end gap-2">
                 <Button
@@ -626,6 +684,7 @@ export const Candidates = () => {
                   onClick={() => {
                     setShowUploadDialog(false);
                     setSelectedCandidate(null);
+                    setUploadMode('pdf');
                   }}
                   className="rounded-full"
                 >
@@ -633,6 +692,124 @@ export const Candidates = () => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* NEW: ZIP Duplicate Detection Dialog */}
+        <Dialog open={showZipDuplicateDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowZipDuplicateDialog(false);
+            setZipDuplicates(null);
+            setPendingZipFile(null);
+            setSelectedMergeTarget(null);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="font-heading flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-500" />
+                Potential Duplicate Detected
+              </DialogTitle>
+              <DialogDescription>
+                The candidate in this ZIP file may already exist in your talent pool. Choose how to proceed.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {zipDuplicates && (
+              <div className="space-y-4 py-4">
+                <Card className="border-amber-200 bg-amber-50/50">
+                  <CardContent className="pt-4">
+                    <p className="text-sm font-medium text-slate-700 mb-3">
+                      Found {zipDuplicates.duplicates?.length || 0} potential match(es):
+                    </p>
+                    
+                    <div className="space-y-2">
+                      {zipDuplicates.duplicates?.map((match) => (
+                        <div 
+                          key={match.candidate_id} 
+                          className={`flex items-center gap-3 p-3 bg-white rounded-lg border cursor-pointer transition-colors ${
+                            selectedMergeTarget === match.candidate_id 
+                              ? 'border-indigo-500 ring-2 ring-indigo-200' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                          onClick={() => setSelectedMergeTarget(match.candidate_id)}
+                        >
+                          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                            <UserCheck className="w-5 h-5 text-indigo-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{match.candidate_name}</p>
+                            <p className="text-xs text-slate-500">{match.candidate_email}</p>
+                            {match.candidate_phone && (
+                              <p className="text-xs text-slate-400">{match.candidate_phone}</p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {match.match_reasons?.map((reason, i) => (
+                              <span key={i} className={`text-xs px-2 py-0.5 rounded-full ${
+                                reason === 'email_match' ? 'bg-red-100 text-red-700' :
+                                reason === 'phone_match' ? 'bg-orange-100 text-orange-700' :
+                                'bg-yellow-100 text-yellow-700'
+                              }`}>
+                                {reason.replace('_', ' ')}
+                              </span>
+                            ))}
+                          </div>
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            match.confidence === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {match.confidence} confidence
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <div className="text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
+                  <p className="font-medium mb-2">What would you like to do?</p>
+                  <ul className="space-y-1 text-xs text-slate-500">
+                    <li><strong>Merge:</strong> Add evidence from ZIP to selected existing candidate</li>
+                    <li><strong>Create New:</strong> Create as a separate candidate anyway</li>
+                    <li><strong>Cancel:</strong> Discard and review manually</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            <DialogFooter className="gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowZipDuplicateDialog(false);
+                  setZipDuplicates(null);
+                  setPendingZipFile(null);
+                  setSelectedMergeTarget(null);
+                }}
+                className="rounded-full"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleZipForceCreate}
+                disabled={zipUploading}
+                className="rounded-full"
+              >
+                {zipUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <UserPlus className="w-4 h-4 mr-2" />
+                Create New
+              </Button>
+              <Button
+                onClick={() => selectedMergeTarget && handleZipMerge(selectedMergeTarget)}
+                disabled={zipUploading || !selectedMergeTarget}
+                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
+              >
+                {zipUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <GitMerge className="w-4 h-4 mr-2" />
+                Merge into Selected
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
