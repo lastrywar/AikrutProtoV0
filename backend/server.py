@@ -688,6 +688,44 @@ async def list_candidates(current_user: dict = Depends(get_current_user)):
     candidates = await db.candidates.find({"company_id": current_user["company_id"]}, {"_id": 0}).to_list(1000)
     return [CandidateResponse(**c) for c in candidates]
 
+# Candidate search/pagination endpoint - MUST be before {candidate_id} route
+@api_router.get("/candidates/search")
+async def search_candidates(
+    q: str = Query("", description="Search query"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user)
+):
+    """Search and paginate candidates"""
+    if not current_user.get("company_id"):
+        return {"candidates": [], "total": 0, "page": page, "pages": 0}
+    
+    company_id = current_user["company_id"]
+    
+    # Build search query
+    query = {"company_id": company_id}
+    if q.strip():
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}}
+        ]
+    
+    # Get total count
+    total = await db.candidates.count_documents(query)
+    pages = (total + limit - 1) // limit
+    
+    # Get paginated results
+    skip = (page - 1) * limit
+    candidates = await db.candidates.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
+    
+    return {
+        "candidates": candidates,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "limit": limit
+    }
+
 @api_router.get("/candidates/{candidate_id}", response_model=CandidateResponse)
 async def get_candidate(candidate_id: str, current_user: dict = Depends(get_current_user)):
     candidate = await db.candidates.find_one({"id": candidate_id, "company_id": current_user.get("company_id")}, {"_id": 0})
