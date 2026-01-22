@@ -1256,6 +1256,7 @@ Return JSON:
                     "id": analysis_id,
                     "job_id": request.job_id,
                     "candidate_id": candidate_id,
+                    "candidate_name": candidate["name"],  # Store name for reference
                     "final_score": final_score,
                     "category_scores": category_scores,
                     "overall_reasoning": analysis_data.get("overall_reasoning", ""),
