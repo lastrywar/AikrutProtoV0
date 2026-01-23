@@ -876,6 +876,317 @@ startxref
         )
         return success
 
+    # NEW TALENT TAGGING ENDPOINTS TESTS
+    def test_get_tag_library(self):
+        """Test GET /api/tags/library - Get complete tag library"""
+        success, response = self.run_test(
+            "Get Tag Library",
+            "GET",
+            "tags/library",
+            200
+        )
+        
+        if success:
+            # Verify response structure
+            expected_fields = ['layers', 'consistency_rules']
+            if all(field in response for field in expected_fields):
+                layers = response['layers']
+                
+                # Check all 4 layers are present
+                if all(str(i) in layers for i in [1, 2, 3, 4]):
+                    # Verify Layer 1 structure
+                    layer1 = layers['1']
+                    if (layer1.get('name') == 'Domain / Function' and 
+                        layer1.get('max_tags') == 3 and 
+                        isinstance(layer1.get('tags'), list) and
+                        len(layer1.get('tags', [])) > 0):
+                        
+                        # Verify Layer 4 has definitions
+                        layer4 = layers['4']
+                        if ('definitions' in layer4 and 
+                            'OPERATIONAL' in layer4['definitions'] and
+                            'TACTICAL' in layer4['definitions'] and
+                            'STRATEGIC' in layer4['definitions']):
+                            
+                            print(f"   ✅ Tag library contains {len(layer1['tags'])} Layer 1 tags")
+                            print(f"   ✅ Tag library contains {len(layers['2']['tags'])} Layer 2 tags")
+                            print(f"   ✅ Layer 3 is free text (no predefined tags)")
+                            print(f"   ✅ Tag library contains {len(layer4['tags'])} Layer 4 tags")
+                            return True
+                        else:
+                            self.log_result("Get Tag Library", False, "Layer 4 missing definitions")
+                            return False
+                    else:
+                        self.log_result("Get Tag Library", False, "Layer 1 structure invalid")
+                        return False
+                else:
+                    self.log_result("Get Tag Library", False, "Missing layer definitions")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Get Tag Library", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_add_manual_tag_layer1(self):
+        """Test POST /api/candidates/{candidate_id}/tags - Add Layer 1 tag"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Add Manual Tag Layer 1", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Add Manual Tag - Layer 1",
+            "POST",
+            f"candidates/{candidate_id}/tags",
+            200,
+            data={
+                "tag_value": "ENGINEERING",
+                "layer": 1
+            }
+        )
+        
+        if success:
+            expected_fields = ['status', 'tag', 'tags']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'success':
+                    tag = response['tag']
+                    if (tag.get('tag_value') == 'ENGINEERING' and 
+                        tag.get('layer') == 1 and
+                        tag.get('source') == 'MANUAL' and
+                        tag.get('layer_name') == 'Domain / Function'):
+                        
+                        print(f"   ✅ Added Layer 1 tag: {tag['tag_value']}")
+                        print(f"   ✅ Tag source: {tag['source']}")
+                        return True
+                    else:
+                        self.log_result("Add Manual Tag Layer 1", False, f"Tag structure invalid: {tag}")
+                        return False
+                else:
+                    self.log_result("Add Manual Tag Layer 1", False, f"Expected status 'success', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Add Manual Tag Layer 1", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_add_manual_tag_layer3(self):
+        """Test POST /api/candidates/{candidate_id}/tags - Add Layer 3 skill tag"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Add Manual Tag Layer 3", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Add Manual Tag - Layer 3",
+            "POST",
+            f"candidates/{candidate_id}/tags",
+            200,
+            data={
+                "tag_value": "Python",
+                "layer": 3
+            }
+        )
+        
+        if success:
+            expected_fields = ['status', 'tag', 'tags']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'success':
+                    tag = response['tag']
+                    if (tag.get('tag_value') == 'Python' and 
+                        tag.get('layer') == 3 and
+                        tag.get('source') == 'MANUAL' and
+                        tag.get('layer_name') == 'Skill / Competency'):
+                        
+                        print(f"   ✅ Added Layer 3 skill tag: {tag['tag_value']}")
+                        return True
+                    else:
+                        self.log_result("Add Manual Tag Layer 3", False, f"Tag structure invalid: {tag}")
+                        return False
+                else:
+                    self.log_result("Add Manual Tag Layer 3", False, f"Expected status 'success', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Add Manual Tag Layer 3", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_add_invalid_tag_layer(self):
+        """Test POST /api/candidates/{candidate_id}/tags - Invalid layer validation"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Add Invalid Tag Layer", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Add Invalid Tag - Invalid Layer",
+            "POST",
+            f"candidates/{candidate_id}/tags",
+            400,  # Expecting 400 error
+            data={
+                "tag_value": "INVALID",
+                "layer": 5  # Invalid layer
+            }
+        )
+        return success
+
+    def test_add_invalid_tag_value(self):
+        """Test POST /api/candidates/{candidate_id}/tags - Invalid tag value for predefined layer"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Add Invalid Tag Value", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Add Invalid Tag - Invalid Value",
+            "POST",
+            f"candidates/{candidate_id}/tags",
+            400,  # Expecting 400 error
+            data={
+                "tag_value": "INVALID_DOMAIN",
+                "layer": 1  # Layer 1 has predefined values
+            }
+        )
+        return success
+
+    def test_get_candidate_tags(self):
+        """Test GET /api/candidates/{candidate_id}/tags - Get all tags for candidate"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Get Candidate Tags", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Get Candidate Tags",
+            "GET",
+            f"candidates/{candidate_id}/tags",
+            200
+        )
+        
+        if success:
+            expected_fields = ['tags', 'grouped', 'deleted_tags', 'layer_info']
+            if all(field in response for field in expected_fields):
+                tags = response['tags']
+                grouped = response['grouped']
+                
+                # Should have tags from previous tests (Layer 1: ENGINEERING, Layer 3: Python)
+                if len(tags) >= 2:
+                    # Check grouped structure
+                    if all(str(i) in grouped for i in [1, 2, 3, 4]):
+                        # Verify we have the tags we added
+                        layer1_tags = grouped['1']
+                        layer3_tags = grouped['3']
+                        
+                        has_engineering = any(t.get('tag_value') == 'ENGINEERING' for t in layer1_tags)
+                        has_python = any(t.get('tag_value') == 'Python' for t in layer3_tags)
+                        
+                        if has_engineering and has_python:
+                            print(f"   ✅ Found {len(tags)} total tags")
+                            print(f"   ✅ Layer 1 tags: {len(layer1_tags)}")
+                            print(f"   ✅ Layer 3 tags: {len(layer3_tags)}")
+                            return True
+                        else:
+                            self.log_result("Get Candidate Tags", False, f"Missing expected tags. Layer 1: {layer1_tags}, Layer 3: {layer3_tags}")
+                            return False
+                    else:
+                        self.log_result("Get Candidate Tags", False, "Grouped structure missing layers")
+                        return False
+                else:
+                    self.log_result("Get Candidate Tags", False, f"Expected at least 2 tags, got {len(tags)}")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Get Candidate Tags", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_delete_manual_tag(self):
+        """Test DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X - Delete manual tag"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Delete Manual Tag", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Delete Manual Tag",
+            "DELETE",
+            f"candidates/{candidate_id}/tags/Python?layer=3",
+            200
+        )
+        
+        if success:
+            expected_fields = ['status', 'deleted_tag', 'blacklisted', 'remaining_tags']
+            if all(field in response for field in expected_fields):
+                if response['status'] == 'success':
+                    deleted_tag = response['deleted_tag']
+                    blacklisted = response['blacklisted']
+                    
+                    if (deleted_tag.get('tag_value') == 'Python' and 
+                        deleted_tag.get('layer') == 3 and
+                        deleted_tag.get('source') == 'MANUAL' and
+                        blacklisted == False):  # Manual tags should not be blacklisted
+                        
+                        print(f"   ✅ Deleted manual tag: {deleted_tag['tag_value']}")
+                        print(f"   ✅ Blacklisted: {blacklisted} (correct for manual tags)")
+                        print(f"   ✅ Remaining tags: {len(response['remaining_tags'])}")
+                        return True
+                    else:
+                        self.log_result("Delete Manual Tag", False, f"Unexpected tag or blacklist status: {deleted_tag}, blacklisted: {blacklisted}")
+                        return False
+                else:
+                    self.log_result("Delete Manual Tag", False, f"Expected status 'success', got '{response['status']}'")
+                    return False
+            else:
+                missing = [f for f in expected_fields if f not in response]
+                self.log_result("Delete Manual Tag", False, f"Missing fields: {missing}")
+                return False
+        return success
+
+    def test_extract_tags_no_api_key(self):
+        """Test POST /api/candidates/{candidate_id}/extract-tags - Should fail without API key"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Extract Tags - No API Key", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Extract Tags - No API Key",
+            "POST",
+            f"candidates/{candidate_id}/extract-tags",
+            400  # Expecting 400 error due to no API key
+        )
+        
+        # This should fail with 400 because OpenRouter API key is not configured
+        if success:
+            print(f"   ✅ Correctly returned 400 error for missing API key")
+            return True
+        return success
+
+    def test_delete_nonexistent_tag(self):
+        """Test DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X - Delete non-existent tag"""
+        if not hasattr(self, 'first_upload_candidate_id'):
+            self.log_result("Delete Non-existent Tag", False, "Need candidate from upload CV test")
+            return False
+            
+        candidate_id = self.first_upload_candidate_id
+        
+        success, response = self.run_test(
+            "Delete Non-existent Tag",
+            "DELETE",
+            f"candidates/{candidate_id}/tags/NonExistentTag?layer=3",
+            404  # Expecting 404 error
+        )
+        return success
+
     def run_all_tests(self):
         """Run all backend tests"""
         print("🚀 Starting TalentAI Backend API Tests")
