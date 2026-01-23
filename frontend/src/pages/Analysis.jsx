@@ -969,7 +969,7 @@ export const Analysis = () => {
 
                           {/* Category Scores */}
                           {['character', 'requirement', 'skill'].map(category => {
-                            const catResult = result.category_results?.find(c => c.category === category);
+                            const catResult = result.category_scores?.find(c => c.category === category);
                             const score = catResult?.score || 0;
                             return (
                               <div key={category} className="col-span-2 text-center">
