@@ -3,17 +3,20 @@ import { TopBar } from '../components/layout/TopBar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Slider } from '../components/ui/slider';
 import { Checkbox } from '../components/ui/checkbox';
 import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Badge } from '../components/ui/badge';
 import { jobsAPI, candidatesAPI, analysisAPI } from '../lib/api';
 import { 
   BarChart3, Play, Loader2, ChevronDown, ChevronUp, Users, Target, Wrench, 
   Search, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
-  Star, TrendingUp, TrendingDown, FileText, Heart, Trash2, UserX
+  Star, TrendingUp, TrendingDown, FileText, Heart, Trash2, UserX, Filter,
+  Tag, X, Briefcase, Sparkles, Eye
 } from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { ScoreRing, ScoreBadge } from '../components/common/ScoreRing';
@@ -36,12 +39,20 @@ export const Analysis = () => {
   const [selectedJob, setSelectedJob] = useState('');
   const [selectedJobData, setSelectedJobData] = useState(null);
   
-  // Candidate selection with search/pagination
-  const [candidateSearch, setCandidateSearch] = useState('');
-  const [candidatePage, setCandidatePage] = useState(1);
-  const [candidateData, setCandidateData] = useState({ candidates: [], total: 0, pages: 0 });
+  // Candidate data and selection
+  const [allCandidates, setAllCandidates] = useState([]);
+  const [filteredCandidates, setFilteredCandidates] = useState([]);
   const [selectedCandidates, setSelectedCandidates] = useState([]);
   const [candidatesMap, setCandidatesMap] = useState({});
+  const [candidateSearch, setCandidateSearch] = useState('');
+  
+  // Tag-based filters (AND logic)
+  const [tagLibrary, setTagLibrary] = useState(null);
+  const [filterLayer1, setFilterLayer1] = useState([]);
+  const [filterLayer2, setFilterLayer2] = useState([]);
+  const [filterLayer3, setFilterLayer3] = useState('');
+  const [filterLayer4, setFilterLayer4] = useState([]);
+  const [showFilters, setShowFilters] = useState(true);
   
   // Results
   const [results, setResults] = useState([]);
@@ -61,11 +72,12 @@ export const Analysis = () => {
   useEffect(() => {
     loadJobs();
     loadAllCandidates();
+    loadTagLibrary();
   }, []);
 
   useEffect(() => {
-    loadCandidates();
-  }, [candidateSearch, candidatePage]);
+    applyFilters();
+  }, [allCandidates, filterLayer1, filterLayer2, filterLayer3, filterLayer4, candidateSearch]);
 
   useEffect(() => {
     if (selectedJob) {
@@ -98,27 +110,25 @@ export const Analysis = () => {
   const loadAllCandidates = async () => {
     try {
       const res = await candidatesAPI.list();
+      const candidates = res.data || [];
+      setAllCandidates(candidates);
+      setFilteredCandidates(candidates);
       const map = {};
-      res.data.forEach(c => { map[c.id] = c; });
+      candidates.forEach(c => { map[c.id] = c; });
       setCandidatesMap(map);
     } catch (error) {
-      console.error('Failed to load all candidates:', error);
+      console.error('Failed to load candidates:', error);
     }
   };
 
-  const loadCandidates = useCallback(async () => {
+  const loadTagLibrary = async () => {
     try {
-      const res = await candidatesAPI.search(candidateSearch, candidatePage, 15);
-      setCandidateData(res.data);
+      const res = await candidatesAPI.getTagLibrary();
+      setTagLibrary(res.data);
     } catch (error) {
-      try {
-        const res = await candidatesAPI.list();
-        setCandidateData({ candidates: res.data, total: res.data.length, pages: 1 });
-      } catch (e) {
-        console.error('Failed to load candidates:', e);
-      }
+      console.error('Failed to load tag library:', error);
     }
-  }, [candidateSearch, candidatePage]);
+  };
 
   const loadResults = async () => {
     try {
@@ -130,20 +140,79 @@ export const Analysis = () => {
     }
   };
 
+  // Apply tag filters (AND logic)
+  const applyFilters = () => {
+    let filtered = [...allCandidates];
+    
+    // Search filter
+    if (candidateSearch) {
+      const search = candidateSearch.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.name?.toLowerCase().includes(search) || 
+        c.email?.toLowerCase().includes(search)
+      );
+    }
+    
+    // Layer 1 filter (Domain)
+    if (filterLayer1.length > 0) {
+      filtered = filtered.filter(c => {
+        const candidateTags = (c.tags || []).filter(t => t.layer === 1).map(t => t.tag_value);
+        return filterLayer1.every(f => candidateTags.includes(f));
+      });
+    }
+    
+    // Layer 2 filter (Job Family)
+    if (filterLayer2.length > 0) {
+      filtered = filtered.filter(c => {
+        const candidateTags = (c.tags || []).filter(t => t.layer === 2).map(t => t.tag_value);
+        return filterLayer2.every(f => candidateTags.includes(f));
+      });
+    }
+    
+    // Layer 3 filter (Skills - text search)
+    if (filterLayer3) {
+      const skillSearch = filterLayer3.toLowerCase();
+      filtered = filtered.filter(c => {
+        const candidateSkills = (c.tags || []).filter(t => t.layer === 3).map(t => t.tag_value.toLowerCase());
+        return candidateSkills.some(s => s.includes(skillSearch));
+      });
+    }
+    
+    // Layer 4 filter (Scope)
+    if (filterLayer4.length > 0) {
+      filtered = filtered.filter(c => {
+        const candidateTags = (c.tags || []).filter(t => t.layer === 4).map(t => t.tag_value);
+        return filterLayer4.every(f => candidateTags.includes(f));
+      });
+    }
+    
+    setFilteredCandidates(filtered);
+  };
+
+  const clearFilters = () => {
+    setFilterLayer1([]);
+    setFilterLayer2([]);
+    setFilterLayer3('');
+    setFilterLayer4([]);
+    setCandidateSearch('');
+  };
+
+  const hasActiveFilters = filterLayer1.length > 0 || filterLayer2.length > 0 || filterLayer3 || filterLayer4.length > 0;
+
   const toggleCandidate = (id) => {
     setSelectedCandidates(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
   };
 
-  const selectAllVisible = () => {
-    const visibleIds = candidateData.candidates.map(c => c.id);
-    const allSelected = visibleIds.every(id => selectedCandidates.includes(id));
+  const selectAllFiltered = () => {
+    const filteredIds = filteredCandidates.map(c => c.id);
+    const allSelected = filteredIds.every(id => selectedCandidates.includes(id));
     
     if (allSelected) {
-      setSelectedCandidates(prev => prev.filter(id => !visibleIds.includes(id)));
+      setSelectedCandidates(prev => prev.filter(id => !filteredIds.includes(id)));
     } else {
-      setSelectedCandidates(prev => [...new Set([...prev, ...visibleIds])]);
+      setSelectedCandidates(prev => [...new Set([...prev, ...filteredIds])]);
     }
   };
 
@@ -259,12 +328,10 @@ export const Analysis = () => {
   };
 
   const getCandidateName = (result) => {
-    // First try to get from candidatesMap (live data)
     const candidate = candidatesMap[result.candidate_id];
     if (candidate) {
       return candidate.name;
     }
-    // Fall back to stored candidate_name
     if (result.candidate_name) {
       return `[Deleted] ${result.candidate_name}`;
     }
@@ -291,6 +358,27 @@ export const Analysis = () => {
     return 'text-red-600';
   };
 
+  const getLayerColor = (layer) => {
+    switch (layer) {
+      case 1: return 'bg-blue-100 text-blue-700';
+      case 2: return 'bg-purple-100 text-purple-700';
+      case 3: return 'bg-green-100 text-green-700';
+      case 4: return 'bg-orange-100 text-orange-700';
+      default: return 'bg-slate-100 text-slate-700';
+    }
+  };
+
+  const toggleFilterTag = (layer, value) => {
+    const setFilter = layer === 1 ? setFilterLayer1 : layer === 2 ? setFilterLayer2 : setFilterLayer4;
+    const current = layer === 1 ? filterLayer1 : layer === 2 ? filterLayer2 : filterLayer4;
+    
+    if (current.includes(value)) {
+      setFilter(current.filter(v => v !== value));
+    } else {
+      setFilter([...current, value]);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -300,21 +388,30 @@ export const Analysis = () => {
   }
 
   return (
-    <div className="min-h-screen" data-testid="analysis-page">
-      <TopBar title="Job Fit Analysis" subtitle="AI-powered candidate evaluation" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100" data-testid="analysis-page">
+      <TopBar />
       
-      <div className="p-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Panel - Configuration */}
-          <div className="space-y-6">
-            {/* Job Selection */}
-            <Card className="border-slate-100 shadow-soft">
+      <div className="p-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-heading font-bold text-slate-900">Job Fit Analysis</h1>
+          <p className="text-slate-500">AI-powered candidate evaluation with tag-based filtering</p>
+        </div>
+
+        {/* TOP SECTION: Job Selection + Candidate Selection */}
+        <div className="grid grid-cols-12 gap-6 mb-6">
+          {/* Left: Job Selection */}
+          <div className="col-span-4">
+            <Card className="h-full border-slate-200 shadow-sm">
               <CardHeader className="pb-3">
-                <CardTitle className="font-heading text-lg">Select Job</CardTitle>
+                <CardTitle className="font-heading text-lg flex items-center gap-2">
+                  <Briefcase className="w-5 h-5 text-indigo-500" />
+                  Select Job
+                </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <Select value={selectedJob} onValueChange={setSelectedJob}>
-                  <SelectTrigger data-testid="select-job">
+                  <SelectTrigger data-testid="select-job" className="w-full">
                     <SelectValue placeholder="Choose a job position" />
                   </SelectTrigger>
                   <SelectContent>
@@ -330,68 +427,230 @@ export const Analysis = () => {
                     ))}
                   </SelectContent>
                 </Select>
+
+                {selectedJobData && (
+                  <div className="space-y-3 pt-3 border-t border-slate-100">
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Department</p>
+                      <p className="text-sm font-medium">{selectedJobData.department || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Location</p>
+                      <p className="text-sm font-medium">{selectedJobData.location || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 uppercase tracking-wide">Playbook</p>
+                      <p className="text-sm font-medium">
+                        {selectedJobData.playbook ? (
+                          <span className="text-green-600 flex items-center gap-1">
+                            <CheckCircle className="w-4 h-4" /> Ready
+                          </span>
+                        ) : (
+                          <span className="text-amber-600 flex items-center gap-1">
+                            <AlertCircle className="w-4 h-4" /> Not generated
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!selectedJob && (
+                  <div className="text-center py-6 text-slate-400">
+                    <Briefcase className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Select a job to start analysis</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
+          </div>
 
-            {/* Candidate Selection with Search */}
-            <Card className="border-slate-100 shadow-soft">
+          {/* Right: Candidate Selection with Filters */}
+          <div className="col-span-8">
+            <Card className="h-full border-slate-200 shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="font-heading text-lg">Select Candidates</CardTitle>
-                  <span className="text-sm text-slate-500">
-                    {selectedCandidates.length} selected
-                  </span>
+                  <CardTitle className="font-heading text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5 text-indigo-500" />
+                    Filter & Select Candidates
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-500">
+                      {selectedCandidates.length} selected / {filteredCandidates.length} shown / {allCandidates.length} total
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowFilters(!showFilters)}
+                      className="text-slate-600"
+                    >
+                      <Filter className="w-4 h-4 mr-1" />
+                      {showFilters ? 'Hide' : 'Show'} Filters
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <Input
-                    value={candidateSearch}
-                    onChange={(e) => {
-                      setCandidateSearch(e.target.value);
-                      setCandidatePage(1);
-                    }}
-                    placeholder="Search candidates..."
-                    className="pl-9"
-                    data-testid="candidate-search"
-                  />
+              <CardContent className="space-y-4">
+                {/* Tag Filters */}
+                {showFilters && (
+                  <div className="p-4 bg-slate-50 rounded-xl space-y-4 border border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                        <Tag className="w-4 h-4" />
+                        Tag Filters (AND logic)
+                      </span>
+                      {hasActiveFilters && (
+                        <Button variant="ghost" size="sm" onClick={clearFilters} className="text-slate-500 h-7">
+                          <X className="w-3 h-3 mr-1" /> Clear All
+                        </Button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Layer 1: Domain */}
+                      <div>
+                        <Label className="text-xs text-blue-600">Layer 1: Domain</Label>
+                        <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
+                          {tagLibrary?.layers?.[1]?.tags?.slice(0, 8).map(tag => (
+                            <button
+                              key={tag}
+                              onClick={() => toggleFilterTag(1, tag)}
+                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                                filterLayer1.includes(tag)
+                                  ? 'bg-blue-500 text-white border-blue-500'
+                                  : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400'
+                              }`}
+                            >
+                              {tag.replace(/_/g, ' ')}
+                            </button>
+                          ))}
+                          {tagLibrary?.layers?.[1]?.tags?.length > 8 && (
+                            <span className="text-xs text-slate-400">+{tagLibrary.layers[1].tags.length - 8} more</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Layer 2: Job Family */}
+                      <div>
+                        <Label className="text-xs text-purple-600">Layer 2: Job Family</Label>
+                        <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
+                          {tagLibrary?.layers?.[2]?.tags?.slice(0, 8).map(tag => (
+                            <button
+                              key={tag}
+                              onClick={() => toggleFilterTag(2, tag)}
+                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                                filterLayer2.includes(tag)
+                                  ? 'bg-purple-500 text-white border-purple-500'
+                                  : 'bg-white text-purple-700 border-purple-200 hover:border-purple-400'
+                              }`}
+                            >
+                              {tag.replace(/_/g, ' ')}
+                            </button>
+                          ))}
+                          {tagLibrary?.layers?.[2]?.tags?.length > 8 && (
+                            <span className="text-xs text-slate-400">+{tagLibrary.layers[2].tags.length - 8} more</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Layer 3: Skills (text search) */}
+                      <div>
+                        <Label className="text-xs text-green-600">Layer 3: Skills</Label>
+                        <Input
+                          value={filterLayer3}
+                          onChange={(e) => setFilterLayer3(e.target.value)}
+                          placeholder="Search skills..."
+                          className="mt-1 h-8 text-sm"
+                        />
+                      </div>
+
+                      {/* Layer 4: Scope */}
+                      <div>
+                        <Label className="text-xs text-orange-600">Layer 4: Scope</Label>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {tagLibrary?.layers?.[4]?.tags?.map(tag => (
+                            <button
+                              key={tag}
+                              onClick={() => toggleFilterTag(4, tag)}
+                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                                filterLayer4.includes(tag)
+                                  ? 'bg-orange-500 text-white border-orange-500'
+                                  : 'bg-white text-orange-700 border-orange-200 hover:border-orange-400'
+                              }`}
+                            >
+                              {tag}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Search and Select All */}
+                <div className="flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                      value={candidateSearch}
+                      onChange={(e) => setCandidateSearch(e.target.value)}
+                      placeholder="Search by name or email..."
+                      className="pl-9"
+                      data-testid="candidate-search"
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={selectAllFiltered}
+                    className="whitespace-nowrap"
+                  >
+                    {filteredCandidates.every(c => selectedCandidates.includes(c.id)) 
+                      ? 'Deselect All' 
+                      : `Select All (${filteredCandidates.length})`}
+                  </Button>
                 </div>
 
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={selectAllVisible}
-                  className="text-indigo-600 w-full justify-start"
-                  data-testid="select-all-btn"
-                >
-                  {candidateData.candidates.every(c => selectedCandidates.includes(c.id)) 
-                    ? 'Deselect All Visible' 
-                    : 'Select All Visible'}
-                </Button>
-
-                <ScrollArea className="h-[280px]">
-                  {candidateData.candidates.length === 0 ? (
-                    <p className="text-sm text-slate-500 text-center py-4">No candidates found</p>
+                {/* Candidate List */}
+                <ScrollArea className="h-[240px] border border-slate-100 rounded-lg">
+                  {filteredCandidates.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">
+                      <Users className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No candidates match the filters</p>
+                    </div>
                   ) : (
-                    <div className="space-y-1">
-                      {candidateData.candidates.map(candidate => (
+                    <div className="divide-y divide-slate-50">
+                      {filteredCandidates.map(candidate => (
                         <label
                           key={candidate.id}
-                          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                          className={`flex items-center gap-3 p-3 cursor-pointer transition-colors ${
                             selectedCandidates.includes(candidate.id)
-                              ? 'bg-indigo-50 border border-indigo-200'
+                              ? 'bg-indigo-50'
                               : 'hover:bg-slate-50'
                           }`}
                         >
                           <Checkbox
                             checked={selectedCandidates.includes(candidate.id)}
                             onCheckedChange={() => toggleCandidate(candidate.id)}
-                            data-testid={`select-candidate-${candidate.id}`}
                           />
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm text-slate-900 truncate">{candidate.name}</p>
-                            <p className="text-xs text-slate-500 truncate">{candidate.email}</p>
+                            <p className="font-medium text-sm text-slate-900">{candidate.name}</p>
+                            <p className="text-xs text-slate-500">{candidate.email}</p>
+                          </div>
+                          {/* Show candidate tags */}
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {(candidate.tags || []).slice(0, 4).map((tag, idx) => (
+                              <span 
+                                key={idx} 
+                                className={`text-xs px-1.5 py-0.5 rounded ${getLayerColor(tag.layer)}`}
+                                title={`${tag.layer_name}: ${tag.tag_value}`}
+                              >
+                                {tag.layer === 3 ? tag.tag_value : tag.tag_value.replace(/_/g, ' ').substring(0, 12)}
+                              </span>
+                            ))}
+                            {(candidate.tags?.length || 0) > 4 && (
+                              <span className="text-xs text-slate-400">+{candidate.tags.length - 4}</span>
+                            )}
                           </div>
                           <span className="text-xs text-slate-400 flex items-center gap-1">
                             <FileText className="w-3 h-3" />
@@ -403,536 +662,283 @@ export const Analysis = () => {
                   )}
                 </ScrollArea>
 
-                {candidateData.pages > 1 && (
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCandidatePage(p => Math.max(1, p - 1))}
-                      disabled={candidatePage === 1}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <span className="text-sm text-slate-500">
-                      Page {candidatePage} of {candidateData.pages}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setCandidatePage(p => Math.min(candidateData.pages, p + 1))}
-                      disabled={candidatePage === candidateData.pages}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                )}
-
-                <p className="text-xs text-slate-400 text-center">
-                  Total: {candidateData.total} candidates
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Analysis Progress */}
-            {analyzing && (
-              <Card className="border-indigo-200 bg-indigo-50">
-                <CardContent className="pt-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-indigo-700">Analyzing...</span>
-                      <span className="text-sm text-indigo-600">
-                        {analysisProgress.current} / {analysisProgress.total}
+                {/* Run Analysis Button */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <div className="text-sm text-slate-500">
+                    {selectedCandidates.length > 0 && selectedJob ? (
+                      <span className="text-indigo-600 font-medium">
+                        Ready to analyze {selectedCandidates.length} candidate(s)
                       </span>
-                    </div>
-                    <Progress 
-                      value={(analysisProgress.current / analysisProgress.total) * 100} 
-                      className="h-2"
-                    />
-                    {analysisProgress.candidateName && (
-                      <p className="text-xs text-indigo-600 flex items-center gap-2">
-                        {analysisProgress.status === 'analyzing' && (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        )}
-                        {analysisProgress.status === 'completed' && (
-                          <CheckCircle className="w-3 h-3" />
-                        )}
-                        {analysisProgress.candidateName}
-                      </p>
+                    ) : (
+                      <span>Select a job and candidates to run analysis</span>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Run Analysis Button */}
-            <Button
-              onClick={runAnalysis}
-              disabled={analyzing || !selectedJob || selectedCandidates.length === 0}
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white rounded-full py-6"
-              data-testid="run-analysis-btn"
-            >
-              {analyzing ? (
-                <>
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  Analyzing {analysisProgress.current}/{analysisProgress.total}...
-                </>
-              ) : (
-                <>
-                  <Play className="w-5 h-5 mr-2" />
-                  Run Analysis ({selectedCandidates.length})
-                </>
-              )}
-            </Button>
-
-            {/* Shortlist Filter */}
-            <Card className="border-slate-100 shadow-soft">
-              <CardHeader className="pb-3">
-                <CardTitle className="font-heading text-lg">Shortlist Filter</CardTitle>
-                <CardDescription>Minimum score threshold</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <Slider
-                    value={[minScore]}
-                    onValueChange={([v]) => setMinScore(v)}
-                    max={100}
-                    step={5}
-                    data-testid="min-score-slider"
-                  />
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Min Score:</span>
-                    <span className="font-medium">{minScore}%</span>
-                  </div>
+                  <Button
+                    onClick={runAnalysis}
+                    disabled={!selectedJob || selectedCandidates.length === 0 || analyzing}
+                    className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full px-6"
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-4 h-4 mr-2" />
+                        Run Analysis
+                      </>
+                    )}
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Panel - Results */}
-          <div className="lg:col-span-2">
-            <Card className="border-slate-100 shadow-soft h-full">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="font-heading flex items-center gap-2">
-                      <BarChart3 className="w-5 h-5 text-indigo-500" />
-                      Analysis Results
-                    </CardTitle>
-                    <CardDescription>
-                      {results.length > 0 
-                        ? `${results.length} candidate(s) scored${minScore > 0 ? ` (≥${minScore}%)` : ''}`
-                        : 'Select candidates and run analysis'}
-                    </CardDescription>
-                  </div>
-                  
-                  {/* Bulk Actions */}
-                  {results.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={selectAllResults}
-                        className="text-slate-600"
-                      >
-                        {selectedResults.length === results.length ? 'Deselect All' : 'Select All'}
-                      </Button>
-                      {selectedResults.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleBulkDeleteResults}
-                          disabled={deleting}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          data-testid="bulk-delete-btn"
-                        >
-                          {deleting ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-4 h-4 mr-1" />
-                          )}
-                          Delete ({selectedResults.length})
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {results.length === 0 ? (
-                  <EmptyState
-                    icon={BarChart3}
-                    title="No results yet"
-                    description="Select a job and candidates, then run the analysis to see AI-powered scoring."
-                  />
-                ) : (
-                  <div className="space-y-4">
-                    {results.sort((a, b) => b.final_score - a.final_score).map((result, index) => {
-                      const isDeleted = isCandidateDeleted(result);
-                      
-                      return (
-                        <Collapsible
-                          key={result.id}
-                          open={expandedResult === result.id}
-                          onOpenChange={() => setExpandedResult(expandedResult === result.id ? null : result.id)}
-                        >
-                          <div
-                            className={`rounded-xl border transition-all ${
-                              expandedResult === result.id 
-                                ? 'border-indigo-200 bg-indigo-50/50' 
-                                : isDeleted 
-                                  ? 'border-red-100 bg-red-50/30'
-                                  : 'border-slate-100 hover:border-slate-200'
-                            }`}
-                          >
-                            <CollapsibleTrigger asChild>
-                              <div
-                                className="p-4 cursor-pointer"
-                                data-testid={`result-${result.id}`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-4">
-                                    {/* Selection Checkbox */}
-                                    <Checkbox
-                                      checked={selectedResults.includes(result.id)}
-                                      onCheckedChange={(e) => {
-                                        e.stopPropagation?.();
-                                        toggleResultSelection(result.id);
-                                      }}
-                                      onClick={(e) => e.stopPropagation()}
-                                    />
-                                    
-                                    <div className="font-semibold text-lg text-slate-400 w-8">
-                                      #{index + 1}
-                                    </div>
-                                    <ScoreRing score={result.final_score} size={56} strokeWidth={5} />
-                                    <div>
-                                      <p className="font-heading font-semibold text-slate-900 flex items-center gap-2">
-                                        {isDeleted && <UserX className="w-4 h-4 text-red-500" />}
-                                        {getCandidateName(result)}
-                                      </p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <ScoreBadge score={result.final_score} />
-                                        {result.final_score >= minScore && minScore > 0 && (
-                                          <span className="badge-success text-xs">
-                                            <CheckCircle className="w-3 h-3 mr-1 inline" />
-                                            Shortlisted
-                                          </span>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setDetailModalResult(result);
-                                      }}
-                                      className="text-indigo-600"
-                                    >
-                                      View Details
-                                    </Button>
-                                    {expandedResult === result.id ? (
-                                      <ChevronUp className="w-5 h-5 text-slate-400" />
-                                    ) : (
-                                      <ChevronDown className="w-5 h-5 text-slate-400" />
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </CollapsibleTrigger>
-                            
-                            <CollapsibleContent>
-                              <div className="px-4 pb-4 pt-0 space-y-4 border-t border-slate-100">
-                                {result.overall_reasoning && (
-                                  <div className="pt-4">
-                                    <p className="text-sm font-medium text-slate-700 mb-2">Summary</p>
-                                    <p className="text-sm text-slate-600 bg-white p-3 rounded-lg">
-                                      {result.overall_reasoning}
-                                    </p>
-                                  </div>
-                                )}
-
-                                <div className="grid grid-cols-2 gap-4">
-                                  {result.strengths?.length > 0 && (
-                                    <div className="bg-green-50 rounded-lg p-3">
-                                      <p className="text-xs font-medium text-green-700 mb-2 flex items-center gap-1">
-                                        <TrendingUp className="w-3 h-3" /> Strengths
-                                      </p>
-                                      <ul className="text-xs text-green-700 space-y-1">
-                                        {result.strengths.map((s, i) => (
-                                          <li key={i}>• {s}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                  {result.gaps?.length > 0 && (
-                                    <div className="bg-amber-50 rounded-lg p-3">
-                                      <p className="text-xs font-medium text-amber-700 mb-2 flex items-center gap-1">
-                                        <TrendingDown className="w-3 h-3" /> Gaps
-                                      </p>
-                                      <ul className="text-xs text-amber-700 space-y-1">
-                                        {result.gaps.map((g, i) => (
-                                          <li key={i}>• {g}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  )}
-                                </div>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                  {result.category_scores?.map(cat => {
-                                    const Icon = getCategoryIcon(cat.category);
-                                    return (
-                                      <div key={cat.category} className="bg-white rounded-lg p-3 border border-slate-100">
-                                        <div className="flex items-center justify-between mb-2">
-                                          <div className="flex items-center gap-2">
-                                            <Icon className="w-4 h-4 text-indigo-500" />
-                                            <span className="font-medium capitalize text-sm">{cat.category}</span>
-                                          </div>
-                                          <span className={`font-bold ${getScoreColor(cat.score)}`}>
-                                            {Math.round(cat.score)}
-                                          </span>
-                                        </div>
-                                        <Progress value={cat.score} className="h-1.5" />
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </CollapsibleContent>
-                          </div>
-                        </Collapsible>
-                      );
-                    })}
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
         </div>
+
+        {/* Analysis Progress */}
+        {analyzing && (
+          <Card className="mb-6 border-indigo-200 bg-indigo-50">
+            <CardContent className="pt-6">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-indigo-700">
+                    Analyzing {analysisProgress.candidateName || '...'}
+                  </span>
+                  <span className="text-sm text-indigo-600">
+                    {analysisProgress.current} / {analysisProgress.total}
+                  </span>
+                </div>
+                <Progress 
+                  value={(analysisProgress.current / analysisProgress.total) * 100} 
+                  className="h-2"
+                />
+                {analysisProgress.message && (
+                  <p className="text-xs text-indigo-600">{analysisProgress.message}</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* BOTTOM SECTION: Analysis Results */}
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="font-heading text-lg flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-500" />
+                Analysis Results
+                {selectedJob && results.length > 0 && (
+                  <span className="text-sm font-normal text-slate-500">
+                    ({results.length} results)
+                  </span>
+                )}
+              </CardTitle>
+              <div className="flex items-center gap-3">
+                {results.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm text-slate-500">Min Score:</Label>
+                      <Input
+                        type="number"
+                        value={minScore}
+                        onChange={(e) => setMinScore(Number(e.target.value))}
+                        className="w-20 h-8"
+                        min={0}
+                        max={100}
+                      />
+                    </div>
+                    {selectedResults.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleBulkDeleteResults}
+                        disabled={deleting}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
+                        Delete ({selectedResults.length})
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {!selectedJob ? (
+              <div className="text-center py-12 text-slate-400">
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Select a job to view analysis results</p>
+              </div>
+            ) : results.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <Target className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No analysis results yet</p>
+                <p className="text-sm">Select candidates and run analysis</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Results Header */}
+                <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                  <Checkbox
+                    checked={selectedResults.length === results.length && results.length > 0}
+                    onCheckedChange={selectAllResults}
+                  />
+                  <div className="grid grid-cols-12 gap-4 flex-1 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    <div className="col-span-3">Candidate</div>
+                    <div className="col-span-2 text-center">Score</div>
+                    <div className="col-span-2 text-center">Character</div>
+                    <div className="col-span-2 text-center">Requirements</div>
+                    <div className="col-span-2 text-center">Skills</div>
+                    <div className="col-span-1 text-center">Actions</div>
+                  </div>
+                </div>
+
+                {/* Results List */}
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-1">
+                    {results.map(result => (
+                      <div
+                        key={result.id}
+                        className={`flex items-center gap-2 p-3 rounded-lg transition-colors ${
+                          selectedResults.includes(result.id) ? 'bg-indigo-50' : 'hover:bg-slate-50'
+                        }`}
+                      >
+                        <Checkbox
+                          checked={selectedResults.includes(result.id)}
+                          onCheckedChange={() => toggleResultSelection(result.id)}
+                        />
+                        <div className="grid grid-cols-12 gap-4 flex-1 items-center">
+                          {/* Candidate Name */}
+                          <div className="col-span-3 flex items-center gap-2">
+                            {isCandidateDeleted(result) && (
+                              <UserX className="w-4 h-4 text-red-400" />
+                            )}
+                            <div>
+                              <p className={`font-medium text-sm ${isCandidateDeleted(result) ? 'text-slate-400' : 'text-slate-900'}`}>
+                                {getCandidateName(result)}
+                              </p>
+                              <p className="text-xs text-slate-400">
+                                {new Date(result.created_at).toLocaleDateString()}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Final Score */}
+                          <div className="col-span-2 text-center">
+                            <span className={`text-lg font-bold ${getScoreColor(result.final_score)}`}>
+                              {Math.round(result.final_score)}%
+                            </span>
+                          </div>
+
+                          {/* Category Scores */}
+                          {['character', 'requirement', 'skill'].map(category => {
+                            const catResult = result.category_results?.find(c => c.category === category);
+                            const score = catResult?.score || 0;
+                            return (
+                              <div key={category} className="col-span-2 text-center">
+                                <span className={`text-sm font-medium ${getScoreColor(score)}`}>
+                                  {Math.round(score)}%
+                                </span>
+                              </div>
+                            );
+                          })}
+
+                          {/* Actions */}
+                          <div className="col-span-1 text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setDetailModalResult(result)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Detail Modal */}
       <Dialog open={!!detailModalResult} onOpenChange={() => setDetailModalResult(null)}>
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col">
-          <DialogHeader className="flex-shrink-0">
-            <DialogTitle className="font-heading flex items-center gap-3">
-              <ScoreRing score={detailModalResult?.final_score || 0} size={48} strokeWidth={5} />
-              <div>
-                <span className="flex items-center gap-2">
-                  {detailModalResult && isCandidateDeleted(detailModalResult) && (
-                    <UserX className="w-5 h-5 text-red-500" />
-                  )}
-                  {detailModalResult && getCandidateName(detailModalResult)}
-                </span>
-                <p className="text-sm font-normal text-slate-500">
-                  Detailed Analysis Report
-                </p>
-              </div>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading">
+              Analysis Details: {detailModalResult && getCandidateName(detailModalResult)}
             </DialogTitle>
+            <DialogDescription>
+              Detailed breakdown of the job fit analysis
+            </DialogDescription>
           </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto pr-2">
-            {detailModalResult && (
-              <Tabs defaultValue="overview" className="w-full">
-                <TabsList className="bg-slate-100 p-1 rounded-full mb-4">
-                  <TabsTrigger value="overview" className="rounded-full px-4">Overview</TabsTrigger>
-                  <TabsTrigger value="character" className="rounded-full px-4">Character</TabsTrigger>
-                  <TabsTrigger value="requirement" className="rounded-full px-4">Requirements</TabsTrigger>
-                  <TabsTrigger value="skill" className="rounded-full px-4">Skills</TabsTrigger>
-                  <TabsTrigger value="values" className="rounded-full px-4">Values</TabsTrigger>
-                </TabsList>
+          {detailModalResult && (
+            <div className="space-y-6 pt-4">
+              {/* Overall Score */}
+              <div className="text-center p-6 bg-slate-50 rounded-xl">
+                <p className="text-sm text-slate-500 mb-2">Overall Job Fit Score</p>
+                <p className={`text-5xl font-bold ${getScoreColor(detailModalResult.final_score)}`}>
+                  {Math.round(detailModalResult.final_score)}%
+                </p>
+              </div>
 
-                {/* Overview Tab */}
-                <TabsContent value="overview" className="space-y-4">
-                  <div className="grid grid-cols-4 gap-4">
-                    <div className="bg-slate-50 rounded-xl p-4 text-center">
-                      <p className="text-xs text-slate-500 mb-1">Final Score</p>
-                      <p className={`text-2xl font-bold ${getScoreColor(detailModalResult.final_score)}`}>
-                        {Math.round(detailModalResult.final_score)}
-                      </p>
-                    </div>
-                    {detailModalResult.category_scores?.map(cat => (
-                      <div key={cat.category} className="bg-slate-50 rounded-xl p-4 text-center">
-                        <p className="text-xs text-slate-500 mb-1 capitalize">{cat.category}</p>
-                        <p className={`text-2xl font-bold ${getScoreColor(cat.score)}`}>
-                          {Math.round(cat.score)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="bg-slate-50 rounded-xl p-4">
-                    <p className="font-medium text-slate-700 mb-2">Overall Assessment</p>
-                    <p className="text-slate-600">{detailModalResult.overall_reasoning}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-50 rounded-xl p-4">
-                      <p className="font-medium text-green-700 mb-2 flex items-center gap-2">
-                        <Star className="w-4 h-4" /> Key Strengths
-                      </p>
-                      <ul className="space-y-2">
-                        {detailModalResult.strengths?.map((s, i) => (
-                          <li key={i} className="text-sm text-green-700 flex items-start gap-2">
-                            <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            {s}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <div className="bg-amber-50 rounded-xl p-4">
-                      <p className="font-medium text-amber-700 mb-2 flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" /> Areas for Improvement
-                      </p>
-                      <ul className="space-y-2">
-                        {detailModalResult.gaps?.map((g, i) => (
-                          <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
-                            <XCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            {g}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                {/* Category Tabs */}
-                {['character', 'requirement', 'skill'].map(category => {
-                  const catData = detailModalResult.category_scores?.find(c => c.category === category);
-                  const Icon = getCategoryIcon(category);
-                  const playbookItems = selectedJobData?.playbook?.[category] || [];
-                  
+              {/* Category Breakdown */}
+              <div className="space-y-4">
+                {detailModalResult.category_results?.map((catResult) => {
+                  const Icon = getCategoryIcon(catResult.category);
                   return (
-                    <TabsContent key={category} value={category} className="space-y-4">
-                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                            <Icon className="w-5 h-5 text-indigo-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium capitalize">{category}</p>
-                            <p className="text-sm text-slate-500">
-                              {playbookItems.length} criteria evaluated
-                            </p>
-                          </div>
+                    <div key={catResult.category} className="border border-slate-200 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Icon className="w-5 h-5 text-indigo-500" />
+                          <span className="font-medium capitalize">{catResult.category}</span>
                         </div>
-                        <div className="text-right">
-                          <p className={`text-3xl font-bold ${getScoreColor(catData?.score || 0)}`}>
-                            {Math.round(catData?.score || 0)}
-                          </p>
-                          <p className="text-xs text-slate-500">Category Score</p>
-                        </div>
+                        <span className={`text-lg font-bold ${getScoreColor(catResult.score)}`}>
+                          {Math.round(catResult.score)}%
+                        </span>
                       </div>
-
-                      <div className="space-y-3">
-                        {catData?.breakdown?.map((item, idx) => {
-                          const playbookItem = playbookItems.find(p => p.id === item.item_id) || {};
-                          return (
-                            <div key={item.item_id || idx} className="bg-white border border-slate-100 rounded-xl p-4">
-                              <div className="flex items-start justify-between mb-2">
-                                <div className="flex-1">
-                                  <p className="font-medium text-slate-900">
-                                    {item.item_name || playbookItem.name || `Criterion ${idx + 1}`}
-                                  </p>
-                                  {playbookItem.description && (
-                                    <p className="text-xs text-slate-500 mt-1">{playbookItem.description}</p>
-                                  )}
-                                </div>
-                                <div className="text-right ml-4">
-                                  <p className={`text-xl font-bold ${getScoreColor(item.raw_score)}`}>
-                                    {Math.round(item.raw_score)}
-                                  </p>
-                                  <p className="text-xs text-slate-500">Weight: {item.weight}%</p>
-                                </div>
+                      
+                      {/* Criteria */}
+                      {catResult.criteria_results && (
+                        <div className="space-y-2">
+                          {catResult.criteria_results.map((crit, idx) => (
+                            <div key={idx} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium">{crit.criterion}</p>
+                                <p className="text-xs text-slate-500 mt-1">{crit.reasoning}</p>
                               </div>
-                              <Progress value={item.raw_score} className="h-1.5 mb-2" />
-                              <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg">
-                                {item.reasoning || 'No reasoning provided'}
-                              </p>
+                              <span className={`text-sm font-bold ${getScoreColor(crit.score)}`}>
+                                {Math.round(crit.score)}%
+                              </span>
                             </div>
-                          );
-                        })}
-
-                        {playbookItems
-                          .filter(p => !catData?.breakdown?.find(b => b.item_id === p.id))
-                          .map(item => (
-                            <div key={item.id} className="bg-slate-50 border border-slate-200 border-dashed rounded-xl p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="font-medium text-slate-500">{item.name}</p>
-                                  <p className="text-xs text-slate-400">{item.description}</p>
-                                </div>
-                                <span className="text-xs text-slate-400">Not evaluated</span>
-                              </div>
-                            </div>
-                          ))
-                        }
-                      </div>
-                    </TabsContent>
-                  );
-                })}
-
-                {/* Company Values Tab */}
-                <TabsContent value="values" className="space-y-4">
-                  {detailModalResult.company_values_alignment ? (
-                    <>
-                      <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-pink-100 flex items-center justify-center">
-                            <Heart className="w-5 h-5 text-pink-600" />
-                          </div>
-                          <div>
-                            <p className="font-medium">Company Values Alignment</p>
-                            <p className="text-sm text-slate-500">Cultural fit assessment</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-3xl font-bold ${getScoreColor(detailModalResult.company_values_alignment.score || 0)}`}>
-                            {Math.round(detailModalResult.company_values_alignment.score || 0)}
-                          </p>
-                          <p className="text-xs text-slate-500">Alignment Score</p>
-                        </div>
-                      </div>
-
-                      {detailModalResult.company_values_alignment.notes && (
-                        <div className="bg-white border border-slate-100 rounded-xl p-4">
-                          <p className="text-sm text-slate-600">
-                            {detailModalResult.company_values_alignment.notes}
-                          </p>
+                          ))}
                         </div>
                       )}
-
-                      {detailModalResult.company_values_alignment.breakdown?.map((value, idx) => (
-                        <div key={idx} className="bg-white border border-slate-100 rounded-xl p-4">
-                          <div className="flex items-start justify-between mb-2">
-                            <p className="font-medium text-slate-900">{value.value_name}</p>
-                            <p className={`text-xl font-bold ${getScoreColor(value.score)}`}>
-                              {Math.round(value.score)}
-                            </p>
-                          </div>
-                          <Progress value={value.score} className="h-1.5 mb-2" />
-                          <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded-lg">
-                            {value.reasoning}
-                          </p>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">
-                      <Heart className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                      <p>No company values alignment data available</p>
-                      <p className="text-sm">Configure company values in Company Settings to enable this.</p>
                     </div>
-                  )}
-                </TabsContent>
-              </Tabs>
-            )}
-          </div>
+                  );
+                })}
+              </div>
+
+              {/* Summary */}
+              {detailModalResult.summary && (
+                <div className="p-4 bg-indigo-50 rounded-xl">
+                  <p className="text-sm font-medium text-indigo-700 mb-2">AI Summary</p>
+                  <p className="text-sm text-slate-700">{detailModalResult.summary}</p>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
   );
 };
+
+export default Analysis;
