@@ -1026,7 +1026,7 @@ export const Analysis = () => {
 
               {/* Category Breakdown */}
               <div className="space-y-4">
-                {detailModalResult.category_results?.map((catResult) => {
+                {detailModalResult.category_scores?.map((catResult) => {
                   const Icon = getCategoryIcon(catResult.category);
                   return (
                     <div key={catResult.category} className="border border-slate-200 rounded-xl p-4">
@@ -1040,17 +1040,22 @@ export const Analysis = () => {
                         </span>
                       </div>
                       
-                      {/* Criteria */}
-                      {catResult.criteria_results && (
+                      {/* Breakdown Items */}
+                      {catResult.breakdown && catResult.breakdown.length > 0 && (
                         <div className="space-y-2">
-                          {catResult.criteria_results.map((crit, idx) => (
-                            <div key={idx} className="flex items-start gap-3 p-2 bg-slate-50 rounded-lg">
+                          {catResult.breakdown.map((item, idx) => (
+                            <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
                               <div className="flex-1">
-                                <p className="text-sm font-medium">{crit.criterion}</p>
-                                <p className="text-xs text-slate-500 mt-1">{crit.reasoning}</p>
+                                <div className="flex items-center justify-between mb-1">
+                                  <p className="text-sm font-medium">{item.item_name}</p>
+                                  <span className="text-xs text-slate-400">
+                                    weight: {item.weight}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-500">{item.reasoning}</p>
                               </div>
-                              <span className={`text-sm font-bold ${getScoreColor(crit.score)}`}>
-                                {Math.round(crit.score)}%
+                              <span className={`text-sm font-bold ${getScoreColor(item.raw_score)}`}>
+                                {Math.round(item.raw_score)}%
                               </span>
                             </div>
                           ))}
@@ -1061,11 +1066,41 @@ export const Analysis = () => {
                 })}
               </div>
 
-              {/* Summary */}
-              {detailModalResult.summary && (
+              {/* Strengths & Gaps */}
+              <div className="grid grid-cols-2 gap-4">
+                {detailModalResult.strengths && detailModalResult.strengths.length > 0 && (
+                  <div className="p-4 bg-green-50 rounded-xl">
+                    <p className="text-sm font-medium text-green-700 mb-2">Strengths</p>
+                    <ul className="space-y-1">
+                      {detailModalResult.strengths.map((s, idx) => (
+                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {detailModalResult.gaps && detailModalResult.gaps.length > 0 && (
+                  <div className="p-4 bg-red-50 rounded-xl">
+                    <p className="text-sm font-medium text-red-700 mb-2">Gaps</p>
+                    <ul className="space-y-1">
+                      {detailModalResult.gaps.map((g, idx) => (
+                        <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                          {g}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* Overall Reasoning */}
+              {detailModalResult.overall_reasoning && (
                 <div className="p-4 bg-indigo-50 rounded-xl">
                   <p className="text-sm font-medium text-indigo-700 mb-2">AI Summary</p>
-                  <p className="text-sm text-slate-700">{detailModalResult.summary}</p>
+                  <p className="text-sm text-slate-700">{detailModalResult.overall_reasoning}</p>
                 </div>
               )}
             </div>
