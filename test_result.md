@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the NEW evidence CRUD and replace endpoints: DELETE /api/candidates/{candidate_id}/evidence/{evidence_index} and POST /api/candidates/replace"
+user_problem_statement: "Test the NEW Talent Tagging endpoints: GET /api/tags/library, POST /api/candidates/{candidate_id}/extract-tags, POST /api/candidates/{candidate_id}/tags, DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X, GET /api/candidates/{candidate_id}/tags"
 
 backend:
   - task: "POST /api/candidates/detect-duplicates endpoint"
