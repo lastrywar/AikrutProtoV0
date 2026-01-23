@@ -1603,6 +1603,91 @@ export const Candidates = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Add Tag Dialog */}
+        <Dialog open={showAddTagDialog} onOpenChange={setShowAddTagDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="font-heading flex items-center gap-2">
+                <Tag className="w-5 h-5 text-indigo-500" />
+                Add Tag
+              </DialogTitle>
+              <DialogDescription>
+                Manually add a tag to this candidate. Manual tags override auto-generated tags.
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Layer</Label>
+                <Select value={String(addTagLayer)} onValueChange={(v) => { setAddTagLayer(Number(v)); setAddTagValue(''); }}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Select layer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Layer 1: Domain / Function (max 3)</SelectItem>
+                    <SelectItem value="2">Layer 2: Job Family (max 3)</SelectItem>
+                    <SelectItem value="3">Layer 3: Skill / Competency (max 10)</SelectItem>
+                    <SelectItem value="4">Layer 4: Scope of Work (max 3)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div>
+                <Label>Tag Value</Label>
+                {addTagLayer === 3 ? (
+                  <Input
+                    value={addTagValue}
+                    onChange={(e) => setAddTagValue(e.target.value)}
+                    placeholder="Enter skill name (e.g., Python, Excel)"
+                    className="mt-1"
+                  />
+                ) : (
+                  <Select value={addTagValue} onValueChange={setAddTagValue}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select tag" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tagLibrary?.layers?.[addTagLayer]?.tags?.map((tag) => (
+                        <SelectItem key={tag} value={tag}>
+                          {tag.replace(/_/g, ' ')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {addTagLayer === 4 && tagLibrary?.layers?.[4]?.definitions && (
+                  <div className="mt-2 text-xs text-slate-500 space-y-1">
+                    <p><strong>OPERATIONAL:</strong> {tagLibrary.layers[4].definitions.OPERATIONAL}</p>
+                    <p><strong>TACTICAL:</strong> {tagLibrary.layers[4].definitions.TACTICAL}</p>
+                    <p><strong>STRATEGIC:</strong> {tagLibrary.layers[4].definitions.STRATEGIC}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddTagDialog(false);
+                  setAddTagValue('');
+                }}
+                className="rounded-full"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddTag}
+                disabled={!addTagValue}
+                className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Tag
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
