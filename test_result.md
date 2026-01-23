@@ -240,6 +240,66 @@ backend:
           agent: "testing"
           comment: "Successfully tested candidate replacement functionality. Deletes old candidate, creates new candidate with provided data, logs replacement action, and returns proper response. Verified old candidate is properly deleted (404 when accessed). Also tested error handling for non-existent candidate (returns 404 as expected)."
 
+  - task: "GET /api/tags/library endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested tag library endpoint. Returns complete taxonomy with all 4 layers: Layer 1 (15 Domain/Function tags), Layer 2 (32 Job Family tags), Layer 3 (free text skills), Layer 4 (3 Scope tags with definitions). Includes consistency rules mapping Layer 1 to valid Layer 2 tags."
+
+  - task: "POST /api/candidates/{candidate_id}/tags endpoint - Add manual tags"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested manual tag addition. Layer 1 (ENGINEERING) and Layer 3 (Python) tags added correctly with MANUAL source. Proper validation for invalid layers (returns 400) and invalid tag values for predefined layers (returns 400). Tag structure includes tag_value, layer, layer_name, source, created_at fields."
+
+  - task: "GET /api/candidates/{candidate_id}/tags endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested get candidate tags endpoint. Returns tags array, grouped by layers (1-4), deleted_tags array, and layer_info definitions. Grouping works correctly - tags properly organized by layer with all required metadata."
+
+  - task: "DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested tag deletion. MANUAL tags deleted without blacklisting (blacklisted: false). AUTO tags would be blacklisted to prevent re-extraction. Returns deleted_tag info, blacklisted status, and remaining_tags. Proper error handling for non-existent tags (returns 404)."
+
+  - task: "POST /api/candidates/{candidate_id}/extract-tags endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "testing"
+          comment: "Successfully tested tag extraction endpoint validation. Correctly returns 400 error when OpenRouter API key is not configured with proper error message 'OpenRouter API key not configured. Please configure in Settings.' Endpoint implementation is complete and ready for use when API key is provided."
+
 frontend:
   # No frontend testing required for this task
 
