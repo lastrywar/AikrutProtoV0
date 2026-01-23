@@ -3435,6 +3435,8 @@ Rules:
                 "email": email,
                 "phone": phone,
                 "evidence": evidence_list,
+                "tags": [],
+                "deleted_tags": [],
                 "created_at": now,
                 "updated_at": now,
                 "upload_source": "zip"
@@ -3442,11 +3444,30 @@ Rules:
             
             await db.candidates.insert_one(candidate)
             
+            # Auto-extract tags if API key is configured
+            if settings.openrouter_api_key:
+                try:
+                    tag_result = await extract_tags_from_evidence(
+                        evidence_list,
+                        [],
+                        settings.openrouter_api_key,
+                        settings.model_name
+                    )
+                    if tag_result.get("tags"):
+                        extracted_tags = [t.dict() for t in tag_result["tags"]]
+                        await db.candidates.update_one(
+                            {"id": candidate_id},
+                            {"$set": {"tags": extracted_tags}}
+                        )
+                        candidate["tags"] = extracted_tags
+                except Exception as e:
+                    logger.warning(f"Auto tag extraction failed for ZIP upload: {e}")
+            
             logger.info(f"Created candidate {candidate_id} from ZIP upload with {len(evidence_list)} evidence files")
             
             return ZipUploadResponse(
                 status="created",
-                candidate=CandidateResponse(**candidate),
+                candidate=CandidateResponse(**{**candidate, "tags": candidate.get("tags", []), "deleted_tags": []}),
                 duplicates=None,
                 message=f"Candidate created successfully with {len(evidence_list)} evidence file(s)",
                 files_processed=1 + len(evidence_files),
