@@ -799,11 +799,206 @@ export const Candidates = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue="evidence" className="w-full">
+                  <Tabs defaultValue="tags" className="w-full">
                     <TabsList className="w-full justify-start mb-4 bg-slate-100/50 p-1 rounded-xl">
+                      <TabsTrigger value="tags" className="rounded-full px-6">
+                        <Tag className="w-4 h-4 mr-1" />
+                        Tags ({detailCandidate.tags?.length || 0})
+                      </TabsTrigger>
                       <TabsTrigger value="evidence" className="rounded-full px-6">Evidence ({detailCandidate.evidence?.length || 0})</TabsTrigger>
                       <TabsTrigger value="info" className="rounded-full px-6">Contact Info</TabsTrigger>
                     </TabsList>
+                    
+                    {/* TAGS TAB */}
+                    <TabsContent value="tags">
+                      <div className="space-y-4">
+                        <div className="flex justify-between items-center">
+                          <h3 className="font-medium text-slate-700">Talent Tags</h3>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={handleExtractTags}
+                              disabled={extractingTags}
+                              className="rounded-full"
+                            >
+                              {extractingTags ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              ) : (
+                                <Sparkles className="w-4 h-4 mr-2" />
+                              )}
+                              {extractingTags ? 'Extracting...' : 'Re-Extract Tags'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAddTagDialog(true)}
+                              className="rounded-full"
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add Tag
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Tags by Layer */}
+                        {(() => {
+                          const grouped = groupTagsByLayer(detailCandidate.tags);
+                          const hasAnyTags = Object.values(grouped).some(arr => arr.length > 0);
+                          
+                          if (!hasAnyTags) {
+                            return (
+                              <div className="text-center py-8 text-slate-400">
+                                <Tag className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                <p>No tags yet</p>
+                                <p className="text-sm">Click "Re-Extract Tags" to analyze evidence</p>
+                              </div>
+                            );
+                          }
+                          
+                          return (
+                            <div className="space-y-4">
+                              {/* Layer 1: Domain/Function */}
+                              <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-blue-700">Layer 1: Domain / Function</span>
+                                    <span className="text-xs text-blue-500">(max 3)</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {grouped[1].length > 0 ? grouped[1].map((tag, idx) => (
+                                    <div 
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm border ${getLayerColor(1)} ${tag.source === 'MANUAL' ? 'ring-2 ring-blue-300' : ''}`}
+                                    >
+                                      {tag.source === 'AUTO' && tag.confidence_score && (
+                                        <span className="text-xs opacity-60" title={`Confidence: ${Math.round(tag.confidence_score * 100)}%`}>
+                                          {Math.round(tag.confidence_score * 100)}%
+                                        </span>
+                                      )}
+                                      {tag.source === 'MANUAL' && <User className="w-3 h-3" />}
+                                      <span>{tag.tag_value.replace(/_/g, ' ')}</span>
+                                      <button
+                                        onClick={() => handleDeleteTag(tag.tag_value, tag.layer)}
+                                        disabled={deletingTag === tag.tag_value}
+                                        className="ml-1 hover:text-red-600"
+                                      >
+                                        {deletingTag === tag.tag_value ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+                                  )) : <span className="text-xs text-slate-400 italic">No domain tags</span>}
+                                </div>
+                              </div>
+                              
+                              {/* Layer 2: Job Family */}
+                              <div className="p-4 bg-purple-50/50 rounded-xl border border-purple-100">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-purple-700">Layer 2: Job Family</span>
+                                    <span className="text-xs text-purple-500">(max 3)</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {grouped[2].length > 0 ? grouped[2].map((tag, idx) => (
+                                    <div 
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm border ${getLayerColor(2)} ${tag.source === 'MANUAL' ? 'ring-2 ring-purple-300' : ''}`}
+                                    >
+                                      {tag.source === 'AUTO' && tag.confidence_score && (
+                                        <span className="text-xs opacity-60">{Math.round(tag.confidence_score * 100)}%</span>
+                                      )}
+                                      {tag.source === 'MANUAL' && <User className="w-3 h-3" />}
+                                      <span>{tag.tag_value.replace(/_/g, ' ')}</span>
+                                      <button
+                                        onClick={() => handleDeleteTag(tag.tag_value, tag.layer)}
+                                        disabled={deletingTag === tag.tag_value}
+                                        className="ml-1 hover:text-red-600"
+                                      >
+                                        {deletingTag === tag.tag_value ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+                                  )) : <span className="text-xs text-slate-400 italic">No job family tags</span>}
+                                </div>
+                              </div>
+                              
+                              {/* Layer 3: Skills */}
+                              <div className="p-4 bg-green-50/50 rounded-xl border border-green-100">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-green-700">Layer 3: Skills / Competencies</span>
+                                    <span className="text-xs text-green-500">(max 10)</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {grouped[3].length > 0 ? grouped[3].map((tag, idx) => (
+                                    <div 
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm border ${getLayerColor(3)} ${tag.source === 'MANUAL' ? 'ring-2 ring-green-300' : ''}`}
+                                    >
+                                      {tag.source === 'AUTO' && tag.confidence_score && (
+                                        <span className="text-xs opacity-60">{Math.round(tag.confidence_score * 100)}%</span>
+                                      )}
+                                      {tag.source === 'MANUAL' && <User className="w-3 h-3" />}
+                                      <span>{tag.tag_value}</span>
+                                      <button
+                                        onClick={() => handleDeleteTag(tag.tag_value, tag.layer)}
+                                        disabled={deletingTag === tag.tag_value}
+                                        className="ml-1 hover:text-red-600"
+                                      >
+                                        {deletingTag === tag.tag_value ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+                                  )) : <span className="text-xs text-slate-400 italic">No skill tags</span>}
+                                </div>
+                              </div>
+                              
+                              {/* Layer 4: Scope of Work */}
+                              <div className="p-4 bg-orange-50/50 rounded-xl border border-orange-100">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-orange-700">Layer 4: Scope of Work</span>
+                                    <span className="text-xs text-orange-500">(max 3)</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {grouped[4].length > 0 ? grouped[4].map((tag, idx) => (
+                                    <div 
+                                      key={idx}
+                                      className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm border ${getLayerColor(4)} ${tag.source === 'MANUAL' ? 'ring-2 ring-orange-300' : ''}`}
+                                    >
+                                      {tag.source === 'AUTO' && tag.confidence_score && (
+                                        <span className="text-xs opacity-60">{Math.round(tag.confidence_score * 100)}%</span>
+                                      )}
+                                      {tag.source === 'MANUAL' && <User className="w-3 h-3" />}
+                                      <span>{tag.tag_value}</span>
+                                      <button
+                                        onClick={() => handleDeleteTag(tag.tag_value, tag.layer)}
+                                        disabled={deletingTag === tag.tag_value}
+                                        className="ml-1 hover:text-red-600"
+                                      >
+                                        {deletingTag === tag.tag_value ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                                      </button>
+                                    </div>
+                                  )) : <span className="text-xs text-slate-400 italic">No scope tags</span>}
+                                </div>
+                              </div>
+                              
+                              {/* Legend */}
+                              <div className="text-xs text-slate-400 flex items-center gap-4 pt-2 border-t border-slate-100">
+                                <span className="flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3" /> = Auto-extracted
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <User className="w-3 h-3" /> = Manually added
+                                </span>
+                                <span>% = AI confidence</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </TabsContent>
                     
                     <TabsContent value="evidence">
                       <div className="space-y-4">
