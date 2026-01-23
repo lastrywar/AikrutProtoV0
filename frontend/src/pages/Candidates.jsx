@@ -851,7 +851,7 @@ export const Candidates = () => {
                               <div className="text-center py-8 text-slate-400">
                                 <Tag className="w-12 h-12 mx-auto mb-2 opacity-50" />
                                 <p>No tags yet</p>
-                                <p className="text-sm">Click "Re-Extract Tags" to analyze evidence</p>
+                                <p className="text-sm">Click Re-Extract Tags to analyze evidence</p>
                               </div>
                             );
                           }
