@@ -1249,6 +1249,18 @@ startxref
         self.test_replace_candidate()
         self.test_replace_candidate_nonexistent()
         
+        # NEW Talent Tagging Endpoint Tests
+        print("\n🏷️ NEW Talent Tagging Endpoint Tests")
+        self.test_get_tag_library()
+        self.test_add_manual_tag_layer1()
+        self.test_add_manual_tag_layer3()
+        self.test_add_invalid_tag_layer()
+        self.test_add_invalid_tag_value()
+        self.test_get_candidate_tags()
+        self.test_delete_manual_tag()
+        self.test_extract_tags_no_api_key()
+        self.test_delete_nonexistent_tag()
+        
         # Settings Tests
         print("\n⚙️ Settings Tests")
         self.test_get_settings()
