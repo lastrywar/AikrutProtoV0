@@ -61,6 +61,14 @@ export const Candidates = () => {
   // Evidence delete state
   const [deletingEvidence, setDeletingEvidence] = useState(null);
   
+  // TALENT TAGGING STATE
+  const [tagLibrary, setTagLibrary] = useState(null);
+  const [extractingTags, setExtractingTags] = useState(false);
+  const [showAddTagDialog, setShowAddTagDialog] = useState(false);
+  const [addTagLayer, setAddTagLayer] = useState(1);
+  const [addTagValue, setAddTagValue] = useState('');
+  const [deletingTag, setDeletingTag] = useState(null);
+  
   // Pagination
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -70,7 +78,17 @@ export const Candidates = () => {
 
   useEffect(() => {
     loadCandidates();
+    loadTagLibrary();
   }, [searchTerm, page]);
+
+  const loadTagLibrary = async () => {
+    try {
+      const res = await candidatesAPI.getTagLibrary();
+      setTagLibrary(res.data);
+    } catch (error) {
+      console.error('Failed to load tag library:', error);
+    }
+  };
 
   const loadCandidates = async () => {
     setLoading(true);
