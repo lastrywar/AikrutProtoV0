@@ -5,27 +5,16 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Slider } from '../components/ui/slider';
 import { Checkbox } from '../components/ui/checkbox';
 import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Badge } from '../components/ui/badge';
 import { jobsAPI, candidatesAPI, analysisAPI } from '../lib/api';
 import { 
-  BarChart3, Play, Loader2, ChevronDown, ChevronUp, Users, Target, Wrench, 
-  Search, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight,
-  Star, TrendingUp, TrendingDown, FileText, Heart, Trash2, UserX, Filter,
-  Tag, X, Briefcase, Sparkles, Eye
+  BarChart3, Play, Loader2, Users, Target, Wrench, 
+  Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
+  FileText, Trash2, UserX, Filter, Tag, X, Briefcase, Eye, Plus
 } from 'lucide-react';
-import { EmptyState } from '../components/common/EmptyState';
-import { ScoreRing, ScoreBadge } from '../components/common/ScoreRing';
 import { toast } from 'sonner';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '../components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -33,6 +22,34 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../components/ui/dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '../components/ui/popover';
+
+// Layer 2 category groupings
+const LAYER_2_CATEGORIES = {
+  "Operations & Admin": [
+    "GENERAL_OPERATIONS", "GENERAL_ADMINISTRATION", "HR_OPERATIONS",
+    "TALENT_ACQUISITION", "LEARNING_DEVELOPMENT", "PAYROLL_COMPLIANCE",
+    "ACCOUNTING_SUPPORT", "FINANCIAL_REPORTING", "FINANCIAL_CONTROL",
+    "PROCUREMENT_VENDOR_MANAGEMENT", "LEGAL_COMPLIANCE"
+  ],
+  "Technology": [
+    "SOFTWARE_DEVELOPMENT", "IT_OPERATIONS", "PROJECT_MANAGEMENT",
+    "PRODUCT_MANAGEMENT", "QA_TESTING", "DATA_ANALYTICS", "DATA_ENGINEERING",
+    "DEVOPS_CLOUD", "UI_UX_DESIGN"
+  ],
+  "Sales & Marketing": [
+    "B2B_SALES", "B2C_SALES", "KEY_ACCOUNT_MANAGEMENT", "DIGITAL_MARKETING",
+    "PERFORMANCE_MARKETING", "BRAND_CONTENT", "CUSTOMER_SUPPORT", "CUSTOMER_SUCCESS"
+  ],
+  "Supply Chain & Engineering": [
+    "SUPPLY_CHAIN_MANAGEMENT", "LOGISTICS_OPERATIONS", "NON_IT_ENGINEERING",
+    "RESEARCH_DEVELOPMENT"
+  ]
+};
 
 export const Analysis = () => {
   const [jobs, setJobs] = useState([]);
@@ -54,6 +71,12 @@ export const Analysis = () => {
   const [filterLayer4, setFilterLayer4] = useState([]);
   const [showFilters, setShowFilters] = useState(true);
   
+  // Popover states
+  const [layer1PopoverOpen, setLayer1PopoverOpen] = useState(false);
+  const [layer2PopoverOpen, setLayer2PopoverOpen] = useState(false);
+  const [layer1Search, setLayer1Search] = useState('');
+  const [layer2Search, setLayer2Search] = useState('');
+  
   // Results
   const [results, setResults] = useState([]);
   const [minScore, setMinScore] = useState(0);
@@ -66,7 +89,6 @@ export const Analysis = () => {
   const [analysisProgress, setAnalysisProgress] = useState({ current: 0, total: 0, status: '', candidateName: '' });
   
   // Detail view
-  const [expandedResult, setExpandedResult] = useState(null);
   const [detailModalResult, setDetailModalResult] = useState(null);
 
   useEffect(() => {
@@ -199,6 +221,30 @@ export const Analysis = () => {
 
   const hasActiveFilters = filterLayer1.length > 0 || filterLayer2.length > 0 || filterLayer3 || filterLayer4.length > 0;
 
+  const toggleLayer1Tag = (tag) => {
+    if (filterLayer1.includes(tag)) {
+      setFilterLayer1(filterLayer1.filter(t => t !== tag));
+    } else {
+      setFilterLayer1([...filterLayer1, tag]);
+    }
+  };
+
+  const toggleLayer2Tag = (tag) => {
+    if (filterLayer2.includes(tag)) {
+      setFilterLayer2(filterLayer2.filter(t => t !== tag));
+    } else {
+      setFilterLayer2([...filterLayer2, tag]);
+    }
+  };
+
+  const toggleLayer4Tag = (tag) => {
+    if (filterLayer4.includes(tag)) {
+      setFilterLayer4(filterLayer4.filter(t => t !== tag));
+    } else {
+      setFilterLayer4([...filterLayer4, tag]);
+    }
+  };
+
   const toggleCandidate = (id) => {
     setSelectedCandidates(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
@@ -329,18 +375,12 @@ export const Analysis = () => {
 
   const getCandidateName = (result) => {
     const candidate = candidatesMap[result.candidate_id];
-    if (candidate) {
-      return candidate.name;
-    }
-    if (result.candidate_name) {
-      return `[Deleted] ${result.candidate_name}`;
-    }
+    if (candidate) return candidate.name;
+    if (result.candidate_name) return `[Deleted] ${result.candidate_name}`;
     return '[Deleted] Unknown';
   };
 
-  const isCandidateDeleted = (result) => {
-    return !candidatesMap[result.candidate_id];
-  };
+  const isCandidateDeleted = (result) => !candidatesMap[result.candidate_id];
 
   const getCategoryIcon = (category) => {
     switch (category) {
@@ -368,15 +408,25 @@ export const Analysis = () => {
     }
   };
 
-  const toggleFilterTag = (layer, value) => {
-    const setFilter = layer === 1 ? setFilterLayer1 : layer === 2 ? setFilterLayer2 : setFilterLayer4;
-    const current = layer === 1 ? filterLayer1 : layer === 2 ? filterLayer2 : filterLayer4;
-    
-    if (current.includes(value)) {
-      setFilter(current.filter(v => v !== value));
-    } else {
-      setFilter([...current, value]);
-    }
+  // Filter Layer 1 tags by search
+  const filteredLayer1Tags = (tagLibrary?.layers?.[1]?.tags || []).filter(tag =>
+    tag.toLowerCase().includes(layer1Search.toLowerCase())
+  );
+
+  // Filter Layer 2 tags by search
+  const getFilteredLayer2Categories = () => {
+    const search = layer2Search.toLowerCase();
+    const filtered = {};
+    Object.entries(LAYER_2_CATEGORIES).forEach(([category, tags]) => {
+      const matchingTags = tags.filter(tag => 
+        tag.toLowerCase().includes(search) || 
+        tag.replace(/_/g, ' ').toLowerCase().includes(search)
+      );
+      if (matchingTags.length > 0) {
+        filtered[category] = matchingTags;
+      }
+    });
+    return filtered;
   };
 
   if (loading) {
@@ -507,72 +557,157 @@ export const Analysis = () => {
                     </div>
                     
                     <div className="grid grid-cols-2 gap-4">
-                      {/* Layer 1: Domain */}
+                      {/* Layer 1: Domain - Popover Picker */}
                       <div>
-                        <Label className="text-xs text-blue-600">Layer 1: Domain</Label>
-                        <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
-                          {tagLibrary?.layers?.[1]?.tags?.slice(0, 8).map(tag => (
-                            <button
-                              key={tag}
-                              onClick={() => toggleFilterTag(1, tag)}
-                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                                filterLayer1.includes(tag)
-                                  ? 'bg-blue-500 text-white border-blue-500'
-                                  : 'bg-white text-blue-700 border-blue-200 hover:border-blue-400'
-                              }`}
-                            >
-                              {tag.replace(/_/g, ' ')}
-                            </button>
-                          ))}
-                          {tagLibrary?.layers?.[1]?.tags?.length > 8 && (
-                            <span className="text-xs text-slate-400">+{tagLibrary.layers[1].tags.length - 8} more</span>
+                        <Label className="text-xs text-blue-600 mb-2 block">Layer 1: Domain</Label>
+                        <div className="space-y-2">
+                          {/* Selected chips */}
+                          {filterLayer1.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {filterLayer1.map(tag => (
+                                <span 
+                                  key={tag}
+                                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-blue-500 text-white"
+                                >
+                                  {tag.replace(/_/g, ' ')}
+                                  <button onClick={() => toggleLayer1Tag(tag)} className="hover:bg-blue-600 rounded-full">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
                           )}
+                          {/* Add Filter Popover */}
+                          <Popover open={layer1PopoverOpen} onOpenChange={setLayer1PopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" size="sm" className="w-full justify-start text-slate-600">
+                                <Plus className="w-3 h-3 mr-2" />
+                                Add Domain Filter
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 p-3" align="start">
+                              <div className="space-y-3">
+                                <Input
+                                  placeholder="Search domains..."
+                                  value={layer1Search}
+                                  onChange={(e) => setLayer1Search(e.target.value)}
+                                  className="h-8"
+                                />
+                                <ScrollArea className="h-48">
+                                  <div className="space-y-1">
+                                    {filteredLayer1Tags.map(tag => (
+                                      <label
+                                        key={tag}
+                                        className="flex items-center gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer"
+                                      >
+                                        <Checkbox
+                                          checked={filterLayer1.includes(tag)}
+                                          onCheckedChange={() => toggleLayer1Tag(tag)}
+                                        />
+                                        <span className="text-sm">{tag.replace(/_/g, ' ')}</span>
+                                      </label>
+                                    ))}
+                                    {filteredLayer1Tags.length === 0 && (
+                                      <p className="text-sm text-slate-400 text-center py-4">No matching domains</p>
+                                    )}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       </div>
 
-                      {/* Layer 2: Job Family */}
+                      {/* Layer 2: Job Family - Categorized Popover */}
                       <div>
-                        <Label className="text-xs text-purple-600">Layer 2: Job Family</Label>
-                        <div className="flex flex-wrap gap-1 mt-1 max-h-20 overflow-y-auto">
-                          {tagLibrary?.layers?.[2]?.tags?.slice(0, 8).map(tag => (
-                            <button
-                              key={tag}
-                              onClick={() => toggleFilterTag(2, tag)}
-                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                                filterLayer2.includes(tag)
-                                  ? 'bg-purple-500 text-white border-purple-500'
-                                  : 'bg-white text-purple-700 border-purple-200 hover:border-purple-400'
-                              }`}
-                            >
-                              {tag.replace(/_/g, ' ')}
-                            </button>
-                          ))}
-                          {tagLibrary?.layers?.[2]?.tags?.length > 8 && (
-                            <span className="text-xs text-slate-400">+{tagLibrary.layers[2].tags.length - 8} more</span>
+                        <Label className="text-xs text-purple-600 mb-2 block">Layer 2: Job Family</Label>
+                        <div className="space-y-2">
+                          {/* Selected chips */}
+                          {filterLayer2.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {filterLayer2.map(tag => (
+                                <span 
+                                  key={tag}
+                                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-purple-500 text-white"
+                                >
+                                  {tag.replace(/_/g, ' ')}
+                                  <button onClick={() => toggleLayer2Tag(tag)} className="hover:bg-purple-600 rounded-full">
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
                           )}
+                          {/* Add Filter Popover */}
+                          <Popover open={layer2PopoverOpen} onOpenChange={setLayer2PopoverOpen}>
+                            <PopoverTrigger asChild>
+                              <Button variant="outline" size="sm" className="w-full justify-start text-slate-600">
+                                <Plus className="w-3 h-3 mr-2" />
+                                Add Job Family Filter
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 p-3" align="start">
+                              <div className="space-y-3">
+                                <Input
+                                  placeholder="Search job families..."
+                                  value={layer2Search}
+                                  onChange={(e) => setLayer2Search(e.target.value)}
+                                  className="h-8"
+                                />
+                                <ScrollArea className="h-64">
+                                  <div className="space-y-4">
+                                    {Object.entries(getFilteredLayer2Categories()).map(([category, tags]) => (
+                                      <div key={category}>
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+                                          {category}
+                                        </p>
+                                        <div className="space-y-1">
+                                          {tags.map(tag => (
+                                            <label
+                                              key={tag}
+                                              className="flex items-center gap-2 p-2 rounded hover:bg-slate-50 cursor-pointer"
+                                            >
+                                              <Checkbox
+                                                checked={filterLayer2.includes(tag)}
+                                                onCheckedChange={() => toggleLayer2Tag(tag)}
+                                              />
+                                              <span className="text-sm">{tag.replace(/_/g, ' ')}</span>
+                                            </label>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {Object.keys(getFilteredLayer2Categories()).length === 0 && (
+                                      <p className="text-sm text-slate-400 text-center py-4">No matching job families</p>
+                                    )}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       </div>
 
                       {/* Layer 3: Skills (text search) */}
                       <div>
-                        <Label className="text-xs text-green-600">Layer 3: Skills</Label>
+                        <Label className="text-xs text-green-600 mb-2 block">Layer 3: Skills</Label>
                         <Input
                           value={filterLayer3}
                           onChange={(e) => setFilterLayer3(e.target.value)}
                           placeholder="Search skills..."
-                          className="mt-1 h-8 text-sm"
+                          className="h-9"
                         />
                       </div>
 
-                      {/* Layer 4: Scope */}
+                      {/* Layer 4: Scope (buttons - only 3) */}
                       <div>
-                        <Label className="text-xs text-orange-600">Layer 4: Scope</Label>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {tagLibrary?.layers?.[4]?.tags?.map(tag => (
+                        <Label className="text-xs text-orange-600 mb-2 block">Layer 4: Scope</Label>
+                        <div className="flex flex-wrap gap-1">
+                          {['OPERATIONAL', 'TACTICAL', 'STRATEGIC'].map(tag => (
                             <button
                               key={tag}
-                              onClick={() => toggleFilterTag(4, tag)}
-                              className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                              onClick={() => toggleLayer4Tag(tag)}
+                              className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                                 filterLayer4.includes(tag)
                                   ? 'bg-orange-500 text-white border-orange-500'
                                   : 'bg-white text-orange-700 border-orange-200 hover:border-orange-400'
@@ -605,14 +740,14 @@ export const Analysis = () => {
                     onClick={selectAllFiltered}
                     className="whitespace-nowrap"
                   >
-                    {filteredCandidates.every(c => selectedCandidates.includes(c.id)) 
+                    {filteredCandidates.length > 0 && filteredCandidates.every(c => selectedCandidates.includes(c.id)) 
                       ? 'Deselect All' 
                       : `Select All (${filteredCandidates.length})`}
                   </Button>
                 </div>
 
                 {/* Candidate List */}
-                <ScrollArea className="h-[240px] border border-slate-100 rounded-lg">
+                <ScrollArea className="h-[220px] border border-slate-100 rounded-lg">
                   {filteredCandidates.length === 0 ? (
                     <div className="text-center py-8 text-slate-400">
                       <Users className="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -645,7 +780,7 @@ export const Analysis = () => {
                                 className={`text-xs px-1.5 py-0.5 rounded ${getLayerColor(tag.layer)}`}
                                 title={`${tag.layer_name}: ${tag.tag_value}`}
                               >
-                                {tag.layer === 3 ? tag.tag_value : tag.tag_value.replace(/_/g, ' ').substring(0, 12)}
+                                {tag.layer === 3 ? tag.tag_value : tag.tag_value.replace(/_/g, ' ').substring(0, 10)}
                               </span>
                             ))}
                             {(candidate.tags?.length || 0) > 4 && (
