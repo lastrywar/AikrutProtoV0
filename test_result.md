@@ -311,8 +311,11 @@ metadata:
 
 test_plan:
   current_focus:
-    - "DELETE /api/candidates/{candidate_id}/evidence/{evidence_index} endpoint"
-    - "POST /api/candidates/replace endpoint"
+    - "GET /api/tags/library endpoint"
+    - "POST /api/candidates/{candidate_id}/tags endpoint - Add manual tags"
+    - "GET /api/candidates/{candidate_id}/tags endpoint"
+    - "DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X endpoint"
+    - "POST /api/candidates/{candidate_id}/extract-tags endpoint"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
