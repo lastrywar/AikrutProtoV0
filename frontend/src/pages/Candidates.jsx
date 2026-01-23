@@ -7,12 +7,13 @@ import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Checkbox } from '../components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { candidatesAPI } from '../lib/api';
 import { 
   Users, Upload, Search, Mail, Phone, FileText, Trash2, Plus, Loader2, 
   Edit, RefreshCw, ChevronLeft, ChevronRight, Eye, Save, User, AlertTriangle,
   UserPlus, UserCheck, FolderArchive, GitMerge, ArrowRight, X, CheckCircle2,
-  Replace, Copy
+  Replace, Copy, Tag, Sparkles, Brain
 } from 'lucide-react';
 import { EmptyState } from '../components/common/EmptyState';
 import { toast } from 'sonner';
