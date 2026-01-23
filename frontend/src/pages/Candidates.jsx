@@ -403,6 +403,92 @@ export const Candidates = () => {
     }
   };
 
+  // ==================== TALENT TAGGING HANDLERS ====================
+
+  const handleExtractTags = async () => {
+    if (!detailCandidate) return;
+    
+    setExtractingTags(true);
+    try {
+      const res = await candidatesAPI.extractTags(detailCandidate.id);
+      toast.success(`Extracted ${res.data.tags?.length || 0} tags`);
+      setDetailCandidate(res.data.candidate);
+      loadCandidates();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to extract tags');
+    } finally {
+      setExtractingTags(false);
+    }
+  };
+
+  const handleAddTag = async () => {
+    if (!detailCandidate || !addTagValue) return;
+    
+    try {
+      const res = await candidatesAPI.addTag(detailCandidate.id, addTagValue, addTagLayer);
+      toast.success(`Added tag: ${res.data.tag.tag_value}`);
+      
+      // Refresh candidate
+      const updated = await candidatesAPI.get(detailCandidate.id);
+      setDetailCandidate(updated.data);
+      
+      setShowAddTagDialog(false);
+      setAddTagValue('');
+      loadCandidates();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to add tag');
+    }
+  };
+
+  const handleDeleteTag = async (tagValue, layer) => {
+    if (!detailCandidate) return;
+    
+    setDeletingTag(tagValue);
+    try {
+      const res = await candidatesAPI.deleteTag(detailCandidate.id, tagValue, layer);
+      toast.success(`Deleted tag: ${tagValue}${res.data.blacklisted ? ' (blacklisted)' : ''}`);
+      
+      // Refresh candidate
+      const updated = await candidatesAPI.get(detailCandidate.id);
+      setDetailCandidate(updated.data);
+      loadCandidates();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to delete tag');
+    } finally {
+      setDeletingTag(null);
+    }
+  };
+
+  const getLayerColor = (layer) => {
+    switch (layer) {
+      case 1: return 'bg-blue-100 text-blue-700 border-blue-200';
+      case 2: return 'bg-purple-100 text-purple-700 border-purple-200';
+      case 3: return 'bg-green-100 text-green-700 border-green-200';
+      case 4: return 'bg-orange-100 text-orange-700 border-orange-200';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200';
+    }
+  };
+
+  const getLayerName = (layer) => {
+    switch (layer) {
+      case 1: return 'Domain';
+      case 2: return 'Job Family';
+      case 3: return 'Skill';
+      case 4: return 'Scope';
+      default: return 'Unknown';
+    }
+  };
+
+  const groupTagsByLayer = (tags) => {
+    const grouped = { 1: [], 2: [], 3: [], 4: [] };
+    (tags || []).forEach(tag => {
+      if (grouped[tag.layer]) {
+        grouped[tag.layer].push(tag);
+      }
+    });
+    return grouped;
+  };
+
   // ==================== OTHER HANDLERS ====================
 
   const handleDelete = async (id) => {
