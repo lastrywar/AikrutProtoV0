@@ -1323,17 +1323,40 @@ Rules:
         "email": email,
         "phone": phone,
         "evidence": evidence_to_add,
+        "tags": [],
+        "deleted_tags": [],
         "created_at": now,
         "updated_at": now
     }
     
     await db.candidates.insert_one(candidate)
     
+    # Auto-extract tags if API key is configured
+    extracted_tags = []
+    if settings.openrouter_api_key:
+        try:
+            tag_result = await extract_tags_from_evidence(
+                evidence_to_add,
+                [],  # No deleted tags for new candidate
+                settings.openrouter_api_key,
+                settings.model_name
+            )
+            if tag_result.get("tags"):
+                extracted_tags = [t.dict() for t in tag_result["tags"]]
+                await db.candidates.update_one(
+                    {"id": new_candidate_id},
+                    {"$set": {"tags": extracted_tags}}
+                )
+                candidate["tags"] = extracted_tags
+        except Exception as e:
+            logger.warning(f"Auto tag extraction failed for new candidate: {e}")
+    
     return {
         "status": "created",
-        "candidate": CandidateResponse(**candidate),
+        "candidate": CandidateResponse(**{**candidate, "tags": candidate.get("tags", []), "deleted_tags": []}),
         "evidence_added": len(evidence_to_add),
-        "evidence_types": [e["type"] for e in evidence_to_add]
+        "evidence_types": [e["type"] for e in evidence_to_add],
+        "tags_extracted": len(extracted_tags)
     }
 
 # Helper function for duplicate detection
