@@ -107,10 +107,10 @@ export const candidatesAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
-  // NEW: Delete specific evidence from candidate
+  // Delete specific evidence from candidate
   deleteEvidence: (candidateId, evidenceIndex) => 
     api.delete(`/candidates/${candidateId}/evidence/${evidenceIndex}`),
-  // NEW: Replace candidate (delete old, create new)
+  // Replace candidate (delete old, create new)
   replace: (oldCandidateId, newName, newEmail, newPhone, newEvidence) =>
     api.post('/candidates/replace', {
       old_candidate_id: oldCandidateId,
@@ -139,6 +139,21 @@ export const candidatesAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  // ==================== TALENT TAGGING ====================
+  // Extract tags from candidate evidence using AI
+  extractTags: (candidateId) => 
+    api.post(`/candidates/${candidateId}/extract-tags`),
+  // Get candidate tags
+  getTags: (candidateId) => 
+    api.get(`/candidates/${candidateId}/tags`),
+  // Add manual tag
+  addTag: (candidateId, tagValue, layer) => 
+    api.post(`/candidates/${candidateId}/tags`, { tag_value: tagValue, layer }),
+  // Delete tag
+  deleteTag: (candidateId, tagValue, layer) => 
+    api.delete(`/candidates/${candidateId}/tags/${encodeURIComponent(tagValue)}`, { params: { layer } }),
+  // Get tag library
+  getTagLibrary: () => api.get('/tags/library'),
 };
 
 // Analysis API
