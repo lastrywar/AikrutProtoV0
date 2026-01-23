@@ -1328,6 +1328,7 @@ startxref
         self.test_delete_manual_tag()
         self.test_extract_tags_no_api_key()
         self.test_delete_nonexistent_tag()
+        self.test_add_auto_tag_and_delete_with_blacklist()
         
         # Settings Tests
         print("\n⚙️ Settings Tests")
