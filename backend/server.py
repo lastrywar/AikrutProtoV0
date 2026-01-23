@@ -1605,6 +1605,449 @@ async def replace_candidate(
         "new_candidate": CandidateResponse(**new_candidate)
     }
 
+# ==================== TALENT TAGGING ROUTES ====================
+
+async def extract_tags_from_evidence(
+    evidence_list: List[Dict],
+    deleted_tags: List[str],
+    api_key: str,
+    model: str,
+    admin_settings: Optional[Dict] = None
+) -> Dict:
+    """
+    Extract structured tags from candidate evidence using AI.
+    Respects blacklisted (deleted) tags and layer constraints.
+    """
+    if not api_key:
+        return {"tags": [], "summary": "No API key configured", "evidence_used": []}
+    
+    # Combine all evidence content
+    evidence_texts = []
+    evidence_names = []
+    for ev in evidence_list:
+        if ev.get("content"):
+            evidence_texts.append(f"[{ev.get('type', 'unknown').upper()}] {ev.get('file_name', 'unknown')}:\n{ev['content'][:5000]}")
+            evidence_names.append(ev.get('file_name', 'unknown'))
+    
+    if not evidence_texts:
+        return {"tags": [], "summary": "No evidence content to analyze", "evidence_used": []}
+    
+    combined_evidence = "\n\n---\n\n".join(evidence_texts)
+    
+    # Build the prompt
+    prompt = f"""Analyze the following candidate evidence and extract structured tags according to the taxonomy below.
+
+EVIDENCE:
+{combined_evidence[:15000]}
+
+TAXONOMY & RULES:
+
+LAYER 1 - Domain/Function (max 3 tags):
+Valid values: {', '.join(LAYER_1_TAGS)}
+- Select based on the candidate's primary work domain(s)
+
+LAYER 2 - Job Family (max 3 tags):
+Valid values: {', '.join(LAYER_2_TAGS)}
+- Must be logically consistent with Layer 1 selections
+- e.g., if Layer 1 has "ENGINEERING", Layer 2 should have related tags like "SOFTWARE_DEVELOPMENT"
+
+LAYER 3 - Skills/Competencies (max 10 tags):
+- Extract specific skills mentioned in evidence
+- Normalize skill names (e.g., "MS Excel" → "Excel", "JavaScript/JS" → "JavaScript")
+- Only include skills with clear evidence
+- Rank by relevance/prominence
+
+LAYER 4 - Scope of Work (max 3 tags):
+Valid values: OPERATIONAL, TACTICAL, STRATEGIC
+- OPERATIONAL: task execution, routine work, SOP-based, following instructions
+- TACTICAL: coordination, optimization, problem-solving, team leadership
+- STRATEGIC: decision-making, ownership, direction-setting, executive level
+- Infer from responsibility verbs and achievements, NOT job title alone
+
+EXTRACTION RULES:
+1. Extraction must be evidence-based - cite specific evidence
+2. Job titles alone are NOT sufficient
+3. Prefer under-tagging over over-tagging
+4. If confidence is low, leave the layer empty
+5. Layer 1 and Layer 2 must be logically consistent
+
+BLACKLISTED TAGS (DO NOT include these):
+{', '.join(deleted_tags) if deleted_tags else 'None'}
+
+Return a JSON object with this EXACT structure:
+{{
+    "layer_1": [
+        {{"tag": "TAG_VALUE", "confidence": 0.0-1.0, "evidence": "brief citation"}}
+    ],
+    "layer_2": [
+        {{"tag": "TAG_VALUE", "confidence": 0.0-1.0, "evidence": "brief citation"}}
+    ],
+    "layer_3": [
+        {{"tag": "Normalized Skill Name", "confidence": 0.0-1.0, "evidence": "brief citation"}}
+    ],
+    "layer_4": [
+        {{"tag": "TAG_VALUE", "confidence": 0.0-1.0, "evidence": "brief citation"}}
+    ],
+    "summary": "Brief summary of candidate profile"
+}}
+
+Return ONLY the JSON object, no other text."""
+
+    try:
+        messages = [{"role": "user", "content": prompt}]
+        response = await call_openrouter(api_key, model, messages, temperature=0.2)
+        
+        # Parse JSON response
+        json_start = response.find('{')
+        json_end = response.rfind('}') + 1
+        if json_start >= 0 and json_end > json_start:
+            result = json.loads(response[json_start:json_end])
+        else:
+            logger.error(f"Failed to parse tag extraction response: {response[:500]}")
+            return {"tags": [], "summary": "Failed to parse AI response", "evidence_used": evidence_names}
+        
+        now = datetime.now(timezone.utc).isoformat()
+        tags = []
+        
+        # Process Layer 1
+        for item in result.get("layer_1", [])[:3]:
+            tag_value = item.get("tag", "").upper()
+            if tag_value in LAYER_1_TAGS and tag_value not in deleted_tags:
+                tags.append(CandidateTag(
+                    tag_value=tag_value,
+                    layer=1,
+                    layer_name="Domain / Function",
+                    source="AUTO",
+                    confidence_score=float(item.get("confidence", 0.5)),
+                    created_at=now
+                ))
+        
+        # Process Layer 2 (check consistency with Layer 1)
+        layer_1_values = [t.tag_value for t in tags if t.layer == 1]
+        valid_layer_2 = set()
+        for l1 in layer_1_values:
+            valid_layer_2.update(LAYER_1_TO_2_MAPPING.get(l1, []))
+        
+        for item in result.get("layer_2", [])[:3]:
+            tag_value = item.get("tag", "").upper()
+            # Check if tag is valid and consistent with Layer 1
+            if tag_value in LAYER_2_TAGS and tag_value not in deleted_tags:
+                if not layer_1_values or tag_value in valid_layer_2:
+                    tags.append(CandidateTag(
+                        tag_value=tag_value,
+                        layer=2,
+                        layer_name="Job Family",
+                        source="AUTO",
+                        confidence_score=float(item.get("confidence", 0.5)),
+                        created_at=now
+                    ))
+        
+        # Process Layer 3 (skills - free text, normalized)
+        for item in result.get("layer_3", [])[:10]:
+            tag_value = item.get("tag", "").strip()
+            if tag_value and tag_value not in deleted_tags:
+                # Normalize common variations
+                normalized = tag_value.title()
+                tags.append(CandidateTag(
+                    tag_value=normalized,
+                    layer=3,
+                    layer_name="Skill / Competency",
+                    source="AUTO",
+                    confidence_score=float(item.get("confidence", 0.5)),
+                    created_at=now
+                ))
+        
+        # Process Layer 4
+        for item in result.get("layer_4", [])[:3]:
+            tag_value = item.get("tag", "").upper()
+            if tag_value in LAYER_4_TAGS and tag_value not in deleted_tags:
+                tags.append(CandidateTag(
+                    tag_value=tag_value,
+                    layer=4,
+                    layer_name="Scope of Work",
+                    source="AUTO",
+                    confidence_score=float(item.get("confidence", 0.5)),
+                    created_at=now
+                ))
+        
+        return {
+            "tags": tags,
+            "summary": result.get("summary", ""),
+            "evidence_used": evidence_names
+        }
+        
+    except Exception as e:
+        logger.error(f"Tag extraction error: {e}")
+        return {"tags": [], "summary": f"Extraction failed: {str(e)}", "evidence_used": evidence_names}
+
+@api_router.post("/candidates/{candidate_id}/extract-tags")
+async def extract_candidate_tags(
+    candidate_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Extract tags from candidate evidence using AI.
+    Preserves manual tags and respects blacklisted (deleted) tags.
+    """
+    candidate = await db.candidates.find_one(
+        {"id": candidate_id, "company_id": current_user.get("company_id")},
+        {"_id": 0}
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    settings = await get_ai_settings(current_user["id"])
+    if not settings.openrouter_api_key:
+        raise HTTPException(status_code=400, detail="OpenRouter API key not configured. Please configure in Settings.")
+    
+    admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    
+    evidence_list = candidate.get("evidence", [])
+    deleted_tags = candidate.get("deleted_tags", [])
+    existing_tags = candidate.get("tags", [])
+    
+    # Preserve manual tags
+    manual_tags = [t for t in existing_tags if t.get("source") == "MANUAL"]
+    
+    # Extract new tags
+    result = await extract_tags_from_evidence(
+        evidence_list,
+        deleted_tags,
+        settings.openrouter_api_key,
+        settings.model_name,
+        admin_settings
+    )
+    
+    # Combine manual tags with new auto tags (manual takes precedence)
+    manual_tag_values = {t["tag_value"] for t in manual_tags}
+    new_auto_tags = [t for t in result["tags"] if t.tag_value not in manual_tag_values]
+    
+    # Convert CandidateTag objects to dicts
+    all_tags = manual_tags + [t.dict() for t in new_auto_tags]
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update candidate
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {
+            "$set": {
+                "tags": all_tags,
+                "updated_at": now
+            }
+        }
+    )
+    
+    updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    
+    return {
+        "status": "success",
+        "tags": all_tags,
+        "extraction_summary": result["summary"],
+        "evidence_used": result["evidence_used"],
+        "candidate": CandidateResponse(**{**updated, "tags": updated.get("tags", []), "deleted_tags": updated.get("deleted_tags", [])})
+    }
+
+@api_router.get("/candidates/{candidate_id}/tags")
+async def get_candidate_tags(
+    candidate_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all tags for a candidate."""
+    candidate = await db.candidates.find_one(
+        {"id": candidate_id, "company_id": current_user.get("company_id")},
+        {"_id": 0, "tags": 1, "deleted_tags": 1}
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    tags = candidate.get("tags", [])
+    
+    # Group by layer
+    grouped = {1: [], 2: [], 3: [], 4: []}
+    for tag in tags:
+        layer = tag.get("layer", 3)
+        if layer in grouped:
+            grouped[layer].append(tag)
+    
+    return {
+        "tags": tags,
+        "grouped": grouped,
+        "deleted_tags": candidate.get("deleted_tags", []),
+        "layer_info": LAYER_DEFINITIONS
+    }
+
+@api_router.post("/candidates/{candidate_id}/tags")
+async def add_candidate_tag(
+    candidate_id: str,
+    data: TagAddRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually add a tag to a candidate."""
+    candidate = await db.candidates.find_one(
+        {"id": candidate_id, "company_id": current_user.get("company_id")},
+        {"_id": 0}
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    layer = data.layer
+    tag_value = data.tag_value.strip()
+    
+    # Validate layer
+    if layer not in [1, 2, 3, 4]:
+        raise HTTPException(status_code=400, detail="Invalid layer. Must be 1, 2, 3, or 4.")
+    
+    # Validate tag value for layers with predefined libraries
+    layer_def = LAYER_DEFINITIONS[layer]
+    if layer_def["library"]:
+        tag_value = tag_value.upper()
+        if tag_value not in layer_def["library"]:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid tag for Layer {layer}. Must be one of: {', '.join(layer_def['library'])}"
+            )
+    else:
+        # Layer 3 - normalize to title case
+        tag_value = tag_value.title()
+    
+    existing_tags = candidate.get("tags", [])
+    
+    # Check if tag already exists
+    if any(t.get("tag_value") == tag_value and t.get("layer") == layer for t in existing_tags):
+        raise HTTPException(status_code=400, detail="Tag already exists for this candidate")
+    
+    # Check max tags per layer
+    layer_tags = [t for t in existing_tags if t.get("layer") == layer]
+    if len(layer_tags) >= layer_def["max_tags"]:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Maximum {layer_def['max_tags']} tags allowed for Layer {layer} ({layer_def['name']})"
+        )
+    
+    now = datetime.now(timezone.utc).isoformat()
+    new_tag = {
+        "tag_value": tag_value,
+        "layer": layer,
+        "layer_name": layer_def["name"],
+        "source": "MANUAL",
+        "confidence_score": None,
+        "created_at": now
+    }
+    
+    # Remove from deleted_tags if it was blacklisted
+    deleted_tags = candidate.get("deleted_tags", [])
+    if tag_value in deleted_tags:
+        deleted_tags.remove(tag_value)
+    
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {
+            "$push": {"tags": new_tag},
+            "$set": {"deleted_tags": deleted_tags, "updated_at": now}
+        }
+    )
+    
+    updated = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+    
+    return {
+        "status": "success",
+        "tag": new_tag,
+        "tags": updated.get("tags", [])
+    }
+
+@api_router.delete("/candidates/{candidate_id}/tags/{tag_value}")
+async def delete_candidate_tag(
+    candidate_id: str,
+    tag_value: str,
+    layer: int = Query(..., ge=1, le=4),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Delete a tag from a candidate.
+    If the tag was auto-generated, it gets blacklisted to prevent re-extraction.
+    """
+    candidate = await db.candidates.find_one(
+        {"id": candidate_id, "company_id": current_user.get("company_id")},
+        {"_id": 0}
+    )
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    existing_tags = candidate.get("tags", [])
+    deleted_tags = candidate.get("deleted_tags", [])
+    
+    # Find the tag to delete
+    tag_to_delete = None
+    new_tags = []
+    for tag in existing_tags:
+        if tag.get("tag_value") == tag_value and tag.get("layer") == layer:
+            tag_to_delete = tag
+        else:
+            new_tags.append(tag)
+    
+    if not tag_to_delete:
+        raise HTTPException(status_code=404, detail="Tag not found")
+    
+    # If it was an AUTO tag, blacklist it
+    if tag_to_delete.get("source") == "AUTO" and tag_value not in deleted_tags:
+        deleted_tags.append(tag_value)
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    await db.candidates.update_one(
+        {"id": candidate_id},
+        {
+            "$set": {
+                "tags": new_tags,
+                "deleted_tags": deleted_tags,
+                "updated_at": now
+            }
+        }
+    )
+    
+    return {
+        "status": "success",
+        "deleted_tag": tag_to_delete,
+        "blacklisted": tag_to_delete.get("source") == "AUTO",
+        "remaining_tags": new_tags
+    }
+
+@api_router.get("/tags/library")
+async def get_tag_library(current_user: dict = Depends(get_current_user)):
+    """Get the complete tag library for all layers."""
+    return {
+        "layers": {
+            1: {
+                "name": "Domain / Function",
+                "max_tags": 3,
+                "tags": LAYER_1_TAGS
+            },
+            2: {
+                "name": "Job Family",
+                "max_tags": 3,
+                "tags": LAYER_2_TAGS
+            },
+            3: {
+                "name": "Skill / Competency",
+                "max_tags": 10,
+                "tags": None,  # Free text
+                "description": "Free text skills extracted from evidence"
+            },
+            4: {
+                "name": "Scope of Work",
+                "max_tags": 3,
+                "tags": LAYER_4_TAGS,
+                "definitions": {
+                    "OPERATIONAL": "Task execution, routine work, SOP-based, following instructions",
+                    "TACTICAL": "Coordination, optimization, problem-solving, team leadership",
+                    "STRATEGIC": "Decision-making, ownership, direction-setting, executive level"
+                }
+            }
+        },
+        "consistency_rules": LAYER_1_TO_2_MAPPING
+    }
+
 # ==================== ANALYSIS ROUTES ====================
 
 @api_router.post("/analysis/run", response_model=List[AnalysisResult])
