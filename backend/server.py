@@ -3205,7 +3205,30 @@ Return JSON:
             messages = [{"role": "user", "content": prompt}]
             
             try:
-                response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.3)
+                # Check credits before each candidate
+                credit_check = await check_user_credits(current_user["id"])
+                if not credit_check.has_credits:
+                    yield f"data: {json.dumps({'type': 'error', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'message': credit_check.message})}\n\n"
+                    break
+                
+                # Use with_usage version for credit tracking
+                result = await call_openrouter_with_usage(
+                    global_settings["openrouter_api_key"], 
+                    global_settings["model_name"], 
+                    messages, 
+                    temperature=0.3
+                )
+                
+                response = result["content"]
+                
+                # Deduct credits
+                await deduct_credits(
+                    current_user["id"],
+                    "candidate_analysis",
+                    result["tokens_used"],
+                    result["cost"],
+                    global_settings["model_name"]
+                )
                 
                 json_start = response.find('{')
                 json_end = response.rfind('}') + 1
