@@ -999,9 +999,9 @@ export const Analysis = () => {
                           checked={selectedResults.includes(result.id)}
                           onCheckedChange={() => toggleResultSelection(result.id)}
                         />
-                        <div className="grid grid-cols-13 gap-4 flex-1 items-center">
+                        <div className="grid grid-cols-[3fr_2fr_2fr_2fr_2fr_1fr_1fr] gap-4 flex-1 items-center">
                           {/* Candidate Name */}
-                          <div className="col-span-3 flex items-center gap-2">
+                          <div className="flex items-center gap-2">
                             {isCandidateDeleted(result) && (
                               <UserX className="w-4 h-4 text-red-400" />
                             )}
@@ -1016,7 +1016,7 @@ export const Analysis = () => {
                           </div>
 
                           {/* Final Score */}
-                          <div className="col-span-2 text-center">
+                          <div className="text-center">
                             <span className={`text-lg font-bold ${getScoreColor(result.final_score)}`}>
                               {Math.round(result.final_score)}%
                             </span>
