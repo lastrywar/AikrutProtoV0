@@ -1273,66 +1273,111 @@ export const Analysis = () => {
         </DialogContent>
       </Dialog>
 
-      {/* PDF Generation Dialog */}
+      {/* PDF Generation Dialog - Two-step: Job Selection → Candidate Selection */}
       <Dialog open={pdfDialogOpen} onOpenChange={setPdfDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Generate PDF Report</DialogTitle>
             <DialogDescription>
-              Select candidates to include in the PDF report
+              Select a job and choose candidates to include in the PDF report
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* Select All */}
-            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
-              <Checkbox
-                checked={selectedPdfCandidates.length === selectedResults.filter(r => !isCandidateDeleted(r)).length && selectedPdfCandidates.length > 0}
-                onCheckedChange={(checked) => {
-                  if (checked) {
-                    setSelectedPdfCandidates(selectedResults.filter(r => !isCandidateDeleted(r)).map(r => r.candidate_id));
-                  } else {
-                    setSelectedPdfCandidates([]);
-                  }
-                }}
-              />
-              <span className="font-medium text-sm">
-                Select All ({selectedResults.filter(r => !isCandidateDeleted(r)).length} candidates)
-              </span>
+            {/* Step 1: Job Selection */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select Job</Label>
+              <Select value={pdfJobId} onValueChange={handlePdfJobChange}>
+                <SelectTrigger data-testid="pdf-job-select" className="w-full">
+                  <SelectValue placeholder="Choose a job position" />
+                </SelectTrigger>
+                <SelectContent>
+                  {jobs.map(job => (
+                    <SelectItem key={job.id} value={job.id}>
+                      {job.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Candidate List */}
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {selectedResults
-                .filter(result => !isCandidateDeleted(result)) // Filter out deleted candidates
-                .sort((a, b) => b.final_score - a.final_score)
-                .map((result) => (
-                  <div
-                    key={result.candidate_id}
-                    className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50"
-                  >
-                    <Checkbox
-                      checked={selectedPdfCandidates.includes(result.candidate_id)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedPdfCandidates(prev => [...prev, result.candidate_id]);
-                        } else {
-                          setSelectedPdfCandidates(prev => prev.filter(id => id !== result.candidate_id));
-                        }
-                      }}
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{getCandidateName(result)}</p>
-                      <p className="text-xs text-slate-500">
-                        {new Date(result.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span className={`text-lg font-bold ${getScoreColor(result.final_score)}`}>
-                      {Math.round(result.final_score)}%
+            {/* Step 2: Candidate Selection (shown after job is selected) */}
+            {pdfJobId && (
+              <div className="space-y-3 pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Select Candidates</Label>
+                  {pdfAvailableCandidates.length > 0 && (
+                    <span className="text-xs text-slate-500">
+                      {pdfAvailableCandidates.length} candidate(s) with analysis
                     </span>
+                  )}
+                </div>
+
+                {loadingPdfCandidates ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                    <span className="ml-2 text-sm text-slate-500">Loading candidates...</span>
                   </div>
-                ))}
-            </div>
+                ) : pdfAvailableCandidates.length === 0 ? (
+                  <div className="text-center py-8 text-slate-400">
+                    <Users className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No analysis results found for this job</p>
+                    <p className="text-xs mt-1">Run analysis on candidates first</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Select All */}
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                      <Checkbox
+                        checked={selectedPdfCandidates.length === pdfAvailableCandidates.length && selectedPdfCandidates.length > 0}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedPdfCandidates(pdfAvailableCandidates.map(c => c.candidate_id));
+                          } else {
+                            setSelectedPdfCandidates([]);
+                          }
+                        }}
+                        data-testid="pdf-select-all"
+                      />
+                      <span className="font-medium text-sm">
+                        Select All ({pdfAvailableCandidates.length} candidates)
+                      </span>
+                    </div>
+
+                    {/* Candidate List */}
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {pdfAvailableCandidates.map((candidate) => (
+                        <div
+                          key={candidate.candidate_id}
+                          className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50"
+                        >
+                          <Checkbox
+                            checked={selectedPdfCandidates.includes(candidate.candidate_id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedPdfCandidates(prev => [...prev, candidate.candidate_id]);
+                              } else {
+                                setSelectedPdfCandidates(prev => prev.filter(id => id !== candidate.candidate_id));
+                              }
+                            }}
+                            data-testid={`pdf-candidate-${candidate.candidate_id}`}
+                          />
+                          <div className="flex-1">
+                            <p className="font-medium text-sm">{candidate.candidate_name}</p>
+                            <p className="text-xs text-slate-500">
+                              Analyzed: {new Date(candidate.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <span className={`text-lg font-bold ${getScoreColor(candidate.final_score)}`}>
+                            {Math.round(candidate.final_score)}%
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex items-center justify-between pt-4 border-t">
@@ -1345,6 +1390,8 @@ export const Analysis = () => {
                   onClick={() => {
                     setPdfDialogOpen(false);
                     setSelectedPdfCandidates([]);
+                    setPdfJobId('');
+                    setPdfAvailableCandidates([]);
                   }}
                   disabled={generatingPdf}
                 >
@@ -1352,8 +1399,9 @@ export const Analysis = () => {
                 </Button>
                 <Button
                   onClick={handleGeneratePDF}
-                  disabled={generatingPdf || selectedPdfCandidates.length === 0}
+                  disabled={generatingPdf || selectedPdfCandidates.length === 0 || !pdfJobId}
                   className="bg-indigo-500 hover:bg-indigo-600"
+                  data-testid="generate-pdf-btn"
                 >
                   {generatingPdf ? (
                     <>
