@@ -986,16 +986,21 @@ async def login(credentials: UserLogin):
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
+    # Fetch fresh data from database to ensure credit balance is current
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    
     return UserResponse(
-        id=current_user["id"],
-        email=current_user["email"],
-        name=current_user["name"],
-        company_id=current_user.get("company_id"),
-        created_at=current_user["created_at"],
-        is_approved=current_user.get("is_approved", True),
-        is_active=current_user.get("is_active", True),
-        credits=current_user.get("credits", 0.0),
-        expiry_date=current_user.get("expiry_date")
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        company_id=user.get("company_id"),
+        created_at=user["created_at"],
+        is_approved=user.get("is_approved", True),
+        is_active=user.get("is_active", True),
+        credits=user.get("credits", 0.0),
+        expiry_date=user.get("expiry_date")
     )
 
 # ==================== ADMIN ROUTES ====================
