@@ -43,7 +43,7 @@ SUPER_ADMIN_PASSWORD = "MakanBaksoSapi99"
 ADMIN_JWT_SECRET = os.environ.get('ADMIN_JWT_SECRET', 'talent-ai-admin-secret-key-2024')
 
 # Create the main app
-app = FastAPI(title="TalentAI - CV Screening Platform")
+app = FastAPI(title="Aikrut - CV Screening Platform")
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
@@ -605,8 +605,8 @@ async def call_openrouter_with_usage(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://talentai.app",
-                "X-Title": "TalentAI CV Screening"
+                "HTTP-Referer": "https://aikrut.app",
+                "X-Title": "Aikrut CV Screening"
             },
             json={
                 "model": model,
