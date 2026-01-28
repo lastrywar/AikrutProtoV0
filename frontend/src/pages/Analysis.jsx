@@ -951,7 +951,7 @@ export const Analysis = () => {
                           checked={selectedResults.includes(result.id)}
                           onCheckedChange={() => toggleResultSelection(result.id)}
                         />
-                        <div className="grid grid-cols-12 gap-4 flex-1 items-center">
+                        <div className="grid grid-cols-13 gap-4 flex-1 items-center">
                           {/* Candidate Name */}
                           <div className="col-span-3 flex items-center gap-2">
                             {isCandidateDeleted(result) && (
