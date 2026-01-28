@@ -11,10 +11,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { jobsAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { Sparkles, Save, Loader2, ArrowLeft, Trash2, Plus, Users, Target, Wrench, FileText, PenLine } from 'lucide-react';
 import { toast } from 'sonner';
 
 export const JobEdit = () => {
+  const { refreshUser } = useAuth();
   const { id } = useParams();
   const isNew = id === 'new';
   const navigate = useNavigate();
