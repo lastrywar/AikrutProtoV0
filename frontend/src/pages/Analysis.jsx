@@ -987,6 +987,13 @@ export const Analysis = () => {
                             );
                           })}
 
+                          {/* Company Values Score */}
+                          <div className="col-span-1 text-center">
+                            <span className={`text-sm font-medium ${getScoreColor(result.company_values_alignment?.score || 0)}`}>
+                              {Math.round(result.company_values_alignment?.score || 0)}%
+                            </span>
+                          </div>
+
                           {/* Actions */}
                           <div className="col-span-1 text-center">
                             <Button
