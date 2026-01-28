@@ -27,7 +27,7 @@ export const Company = () => {
     values: []
   });
   
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshUser } = useAuth();
 
   useEffect(() => {
     loadCompany();
