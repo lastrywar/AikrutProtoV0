@@ -115,6 +115,20 @@ export const JobEdit = () => {
       const context = generateMode === 'narrative' ? narrative : '';
       const res = await jobsAPI.generateDescription(form.title || 'Job Position', context);
       
+      // Helper to ensure value is a string
+      const ensureString = (val) => {
+        if (typeof val === 'string') return val;
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') {
+          // If it's an object, try to stringify it nicely or extract text
+          if (Array.isArray(val)) {
+            return val.map(item => typeof item === 'string' ? item : JSON.stringify(item)).join('\n');
+          }
+          return JSON.stringify(val, null, 2);
+        }
+        return String(val);
+      };
+      
       // Handle both string and object responses
       let description = '';
       let requirements = '';
@@ -122,8 +136,8 @@ export const JobEdit = () => {
       if (typeof res.data === 'string') {
         description = res.data;
       } else if (res.data) {
-        description = res.data.description || '';
-        requirements = res.data.requirements || '';
+        description = ensureString(res.data.description);
+        requirements = ensureString(res.data.requirements);
       }
       
       setForm(prev => ({
