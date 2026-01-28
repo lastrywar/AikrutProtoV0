@@ -102,7 +102,7 @@
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
 
-user_problem_statement: "Test the NEW Talent Tagging endpoints: GET /api/tags/library, POST /api/candidates/{candidate_id}/extract-tags, POST /api/candidates/{candidate_id}/tags, DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X, GET /api/candidates/{candidate_id}/tags"
+user_problem_statement: "Implement Super Admin System: Phase 1 - Super admin authentication with hardcoded credentials (admin/MakanBaksoSapi99), user management with approval system, credit management, and analytics dashboard. Users require approval before accessing the platform."
 
 backend:
   - task: "POST /api/candidates/detect-duplicates endpoint"
