@@ -436,28 +436,24 @@ frontend:
   # No frontend testing required for this task
 
 metadata:
-  created_by: "testing_agent"
-  version: "1.3"
-  test_sequence: 4
+  created_by: "main_agent"
+  version: "2.0"
+  test_sequence: 0
   run_ui: false
 
 test_plan:
   current_focus:
-    - "GET /api/tags/library endpoint"
-    - "POST /api/candidates/{candidate_id}/tags endpoint - Add manual tags"
-    - "GET /api/candidates/{candidate_id}/tags endpoint"
-    - "DELETE /api/candidates/{candidate_id}/tags/{tag_value}?layer=X endpoint"
-    - "POST /api/candidates/{candidate_id}/extract-tags endpoint"
+    - "Super Admin Authentication - POST /api/admin/login"
+    - "Admin Dashboard Stats - GET /api/admin/dashboard"
+    - "User Management - GET /api/admin/users"
+    - "User Approval - POST /api/admin/users/{user_id}/approve"
+    - "User Update by Admin - PUT /api/admin/users/{user_id}"
+    - "Admin Login Page - /admin-login"
+    - "Super Admin Dashboard - /super-admin"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 agent_communication:
-    - agent: "testing"
-      message: "Completed comprehensive testing of all NEW candidate management endpoints. All endpoints are working correctly. Fixed one route ordering issue with merge-logs endpoint. All tests passing (21/21)."
-    - agent: "testing"
-      message: "UPDATED: Completed comprehensive testing of the UPDATED upload-cv endpoint with new duplicate detection and evidence splitting features. All 5 test scenarios passed successfully: 1) First time upload (creates candidate with evidence splitting), 2) Duplicate detection (returns warning with duplicates list), 3) Force create (bypasses duplicates), 4) Merge into existing (adds evidence to target candidate), 5) Upload to existing candidate (appends evidence). All backend tests passing (26/26). Contact extraction, evidence splitting, duplicate detection, and merge functionality all working correctly."
-    - agent: "testing"
-      message: "NEW TESTING COMPLETE: Successfully tested the NEW evidence CRUD and replace endpoints. DELETE /api/candidates/{candidate_id}/evidence/{evidence_index} endpoint working correctly - deletes evidence by index, returns proper response with deleted evidence info and remaining count, handles invalid indices with 400 error. POST /api/candidates/replace endpoint working correctly - replaces old candidate with new data, properly deletes old candidate, creates replacement log, handles non-existent candidates with 404 error. All backend tests passing (33/33). Both new endpoints are fully functional and ready for production use."
-    - agent: "testing"
-      message: "NEW TALENT TAGGING TESTING COMPLETE: Successfully tested all 5 NEW Talent Tagging endpoints. GET /api/tags/library returns complete 4-layer taxonomy (15 Layer 1, 32 Layer 2, free-text Layer 3, 3 Layer 4 tags) with consistency rules. POST /api/candidates/{id}/tags adds manual tags with proper validation (invalid layer/value returns 400). GET /api/candidates/{id}/tags returns tags grouped by layers with metadata. DELETE /api/candidates/{id}/tags/{value}?layer=X deletes tags correctly (MANUAL tags not blacklisted, AUTO tags would be blacklisted). POST /api/candidates/{id}/extract-tags properly validates API key requirement (returns 400 without key). All backend tests passing (45/45). Complete talent tagging system is fully functional and ready for production use."
+    - agent: "main"
+      message: "Phase 1 of Super Admin System implemented. Backend includes: admin authentication (hardcoded admin/MakanBaksoSapi99), user schema updates (is_approved, is_active, credits, expiry_date), admin dashboard with stats, user management endpoints (list, approve, reject, update credits), backward compatibility for existing users. Frontend includes: admin login page (/admin-login), super admin dashboard (/super-admin) with stats cards and user management table. All endpoints ready for testing."
