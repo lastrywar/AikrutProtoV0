@@ -152,29 +152,53 @@ export const JobEdit = () => {
       const context = generateMode === 'narrative' ? narrative : '';
       const res = await jobsAPI.generateDescription(form.title || 'Job Position', context);
       
-      // Helper to ensure value is a string
-      const ensureString = (val) => {
-        if (typeof val === 'string') return val;
+      console.log('API Response:', res.data); // Debug log
+      
+      // Recursive helper to flatten any value to string
+      const flattenToString = (val, depth = 0) => {
+        if (depth > 5) return String(val); // Prevent infinite recursion
         if (val === null || val === undefined) return '';
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        if (Array.isArray(val)) {
+          return val.map((item, i) => {
+            const flat = flattenToString(item, depth + 1);
+            return flat ? `• ${flat}` : '';
+          }).filter(Boolean).join('\n');
+        }
         if (typeof val === 'object') {
-          // If it's an object, try to stringify it nicely or extract text
-          if (Array.isArray(val)) {
-            return val.map(item => typeof item === 'string' ? item : JSON.stringify(item)).join('\n');
+          // Try to extract text from common keys
+          const textKeys = ['text', 'content', 'value', 'description', 'name', 'title'];
+          for (const key of textKeys) {
+            if (val[key] && typeof val[key] === 'string') {
+              return val[key];
+            }
           }
-          return JSON.stringify(val, null, 2);
+          // Otherwise, format as key-value pairs
+          const entries = Object.entries(val);
+          if (entries.length > 0) {
+            return entries.map(([k, v]) => {
+              const flat = flattenToString(v, depth + 1);
+              return flat ? `• ${k}: ${flat}` : '';
+            }).filter(Boolean).join('\n');
+          }
+          return '';
         }
         return String(val);
       };
       
-      // Handle both string and object responses
+      // Handle response
       let description = '';
       let requirements = '';
       
       if (typeof res.data === 'string') {
         description = res.data;
       } else if (res.data) {
-        description = ensureString(res.data.description);
-        requirements = ensureString(res.data.requirements);
+        description = flattenToString(res.data.description);
+        requirements = flattenToString(res.data.requirements);
+        
+        console.log('Processed description:', description); // Debug log
+        console.log('Processed requirements:', requirements); // Debug log
       }
       
       setForm(prev => ({
@@ -182,6 +206,19 @@ export const JobEdit = () => {
         description: description || prev.description,
         requirements: requirements || prev.requirements
       }));
+      
+      toast.success('Job description generated!');
+      setShowGenerateDialog(false);
+      setNarrative('');
+    } catch (error) {
+      console.error('Generate error:', error);
+      toast.error(error.response?.data?.detail || 'Failed to generate description');
+    } finally {
+      setGenerating(false);
+      // Refresh credits after AI generation
+      await refreshUser();
+    }
+  };
       
       toast.success('Job description generated!');
       setShowGenerateDialog(false);
