@@ -95,6 +95,8 @@ export const Analysis = () => {
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [selectedPdfCandidates, setSelectedPdfCandidates] = useState([]);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [pdfJobId, setPdfJobId] = useState(''); // Separate job selection for PDF
+  const [pdfAvailableCandidates, setPdfAvailableCandidates] = useState([]);
 
   useEffect(() => {
     loadJobs();
