@@ -396,6 +396,13 @@ export const SuperAdmin = () => {
             </div>
           </CardContent>
         </Card>
+          </TabsContent>
+
+          {/* Settings Tab */}
+          <TabsContent value="settings">
+            <SuperAdminSettings />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
