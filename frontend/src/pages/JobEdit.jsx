@@ -139,6 +139,8 @@ export const JobEdit = () => {
       toast.error(error.response?.data?.detail || 'Failed to generate description');
     } finally {
       setGenerating(false);
+      // Refresh credits after AI generation
+      await refreshUser();
     }
   };
 
@@ -157,6 +159,8 @@ export const JobEdit = () => {
       toast.error(error.response?.data?.detail || 'Failed to generate playbook');
     } finally {
       setGeneratingPlaybook(false);
+      // Refresh credits after AI generation
+      await refreshUser();
     }
   };
 
