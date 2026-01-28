@@ -44,6 +44,49 @@ security = HTTPBearer()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# ==================== DATABASE INDEXES ====================
+
+async def create_indexes():
+    """Create database indexes for better query performance."""
+    try:
+        # Users collection indexes
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("id", unique=True)
+        await db.users.create_index("company_id")
+        await db.users.create_index("is_approved")
+        await db.users.create_index("is_active")
+        await db.users.create_index("created_at")
+        
+        # Companies collection indexes
+        await db.companies.create_index("id", unique=True)
+        
+        # Jobs collection indexes
+        await db.jobs.create_index("id", unique=True)
+        await db.jobs.create_index("company_id")
+        await db.jobs.create_index("created_at")
+        
+        # Candidates collection indexes
+        await db.candidates.create_index("id", unique=True)
+        await db.candidates.create_index("company_id")
+        await db.candidates.create_index("email")
+        await db.candidates.create_index("created_at")
+        
+        # Analyses collection indexes
+        await db.analyses.create_index("id", unique=True)
+        await db.analyses.create_index("user_id")
+        await db.analyses.create_index("job_id")
+        await db.analyses.create_index("candidate_id")
+        await db.analyses.create_index("created_at")
+        
+        # Credit usage logs indexes
+        await db.credit_usage_logs.create_index("id", unique=True)
+        await db.credit_usage_logs.create_index("user_id")
+        await db.credit_usage_logs.create_index("created_at")
+        
+        logger.info("Database indexes created successfully")
+    except Exception as e:
+        logger.warning(f"Index creation warning (may already exist): {e}")
+
 # ==================== MODELS ====================
 
 # Auth Models
