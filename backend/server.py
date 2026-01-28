@@ -745,7 +745,11 @@ async def login(credentials: UserLogin):
             email=user["email"],
             name=user["name"],
             company_id=user.get("company_id"),
-            created_at=user["created_at"]
+            created_at=user["created_at"],
+            is_approved=user.get("is_approved", True),  # Default True for backward compatibility
+            is_active=user.get("is_active", True),      # Default True for backward compatibility
+            credits=user.get("credits", 0.0),
+            expiry_date=user.get("expiry_date")
         )
     )
 
@@ -756,7 +760,11 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         email=current_user["email"],
         name=current_user["name"],
         company_id=current_user.get("company_id"),
-        created_at=current_user["created_at"]
+        created_at=current_user["created_at"],
+        is_approved=current_user.get("is_approved", True),
+        is_active=current_user.get("is_active", True),
+        credits=current_user.get("credits", 0.0),
+        expiry_date=current_user.get("expiry_date")
     )
 
 # ==================== COMPANY ROUTES ====================
