@@ -4,13 +4,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../co
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { 
   Shield, Users, CheckCircle, XCircle, DollarSign, 
   BarChart3, Briefcase, FileText, TrendingUp, LogOut,
-  Clock, Mail, UserCheck, UserX, Edit2, Save
+  Clock, Mail, UserCheck, UserX, Edit2, Save, Settings as SettingsIcon
 } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
+import { SuperAdminSettings } from '../components/admin/SuperAdminSettings';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
