@@ -178,6 +178,7 @@ export const analysisAPI = {
   get: (id) => api.get(`/analysis/${id}`),
   delete: (id) => api.delete(`/analysis/${id}`),
   bulkDelete: (ids) => api.post('/analysis/bulk-delete', { ids }),
+  generatePDF: (data) => api.post('/analysis/generate-pdf', data, { responseType: 'blob' }),
 };
 
 // Settings API
