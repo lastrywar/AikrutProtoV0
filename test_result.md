@@ -237,6 +237,114 @@ frontend:
         - working: "NA"
           agent: "main"
           comment: "Added admin routes: /admin-login and /super-admin to App.js routing."
+
+  - task: "Credit System Implementation"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implemented hybrid credit system with token tracking. Added credit checking, deduction, and usage logging. Supports one-time negative balance, then blocks AI features."
+
+  - task: "OpenRouter Usage Tracking"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Created call_openrouter_with_usage() function that returns token usage and estimated cost. Credits deducted based on actual OpenRouter cost multiplied by configurable rate."
+
+  - task: "Admin Settings Management - GET/PUT /api/admin/settings"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implemented global settings endpoints for admin. Manages openrouter_api_key, model_name, and default_credits_new_user. All AI operations now use global settings instead of per-user settings."
+
+  - task: "Credit Rates Management - GET/PUT /api/admin/credit-rates"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implemented credit rate multiplier configuration. Admin can set different rates for different operations (company_values_generation, job_description_generation, playbook_generation, cv_parsing_ai, candidate_analysis, tag_extraction)."
+
+  - task: "Usage Logs - GET /api/admin/usage-logs"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Implemented usage logs endpoint. Returns detailed credit consumption logs with user info, operation type, tokens used, OpenRouter cost, and credits charged."
+
+  - task: "AI Operations Credit Integration"
+    implemented: true
+    working: "NA"
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Integrated credit checking and deduction into company values generation endpoint. Returns 402 error when insufficient credits. Uses global settings for API key and model."
+
+  - task: "User Settings Update - Language Only"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/Settings.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Completely redesigned user Settings page. Now only shows language preferences and credit balance display. Removed API key and model selection (moved to admin)."
+
+  - task: "Super Admin Settings Component"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/components/admin/SuperAdminSettings.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Created SuperAdminSettings component with API key management, model selection, default credits configuration, and credit rate multiplier settings."
+
+  - task: "Super Admin Dashboard with Tabs"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/src/pages/SuperAdmin.jsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "Updated SuperAdmin page to include tabs: Dashboard (user management) and Settings (global AI configuration). Integrated SuperAdminSettings component."
   - task: "POST /api/candidates/detect-duplicates endpoint"
     implemented: true
     working: true
