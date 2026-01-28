@@ -370,6 +370,10 @@ export const Analysis = () => {
     } finally {
       setAnalyzing(false);
       setSelectedCandidates([]);
+      
+      // Refresh credits after analysis completes
+      await refreshUser();
+      
       loadResults();
       loadAllCandidates();
     }
