@@ -893,16 +893,27 @@ export const Analysis = () => {
                       />
                     </div>
                     {selectedResults.length > 0 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleBulkDeleteResults}
-                        disabled={deleting}
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                      >
-                        {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
-                        Delete ({selectedResults.length})
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPdfDialogOpen(true)}
+                          className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                        >
+                          <FileText className="w-4 h-4 mr-1" />
+                          Download PDF ({selectedResults.length})
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleBulkDeleteResults}
+                          disabled={deleting}
+                          className="text-red-600 border-red-200 hover:bg-red-50"
+                        >
+                          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
+                          Delete ({selectedResults.length})
+                        </Button>
+                      </>
                     )}
                   </>
                 )}
