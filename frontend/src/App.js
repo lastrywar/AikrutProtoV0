@@ -16,6 +16,8 @@ import { Candidates } from "./pages/Candidates";
 import { Analysis } from "./pages/Analysis";
 import { Settings } from "./pages/Settings";
 import { AdminSettings } from "./pages/AdminSettings";
+import { AdminLogin } from "./pages/AdminLogin";
+import { SuperAdmin } from "./pages/SuperAdmin";
 
 function App() {
   return (
