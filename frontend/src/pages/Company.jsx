@@ -94,6 +94,8 @@ export const Company = () => {
       toast.error(error.response?.data?.detail || 'Failed to generate values');
     } finally {
       setGenerating(false);
+      // Refresh credits after AI generation
+      await refreshUser();
     }
   };
 
