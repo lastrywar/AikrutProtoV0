@@ -401,6 +401,35 @@ export const SuperAdmin = () => {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {pagination.total > pagination.limit && (
+              <div className="flex items-center justify-between px-4 py-4 border-t border-slate-100">
+                <p className="text-sm text-slate-600">
+                  Showing {pagination.skip + 1} to {Math.min(pagination.skip + pagination.limit, pagination.total)} of {pagination.total} users
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => loadData(Math.max(0, pagination.skip - pagination.limit), searchQuery)}
+                    disabled={pagination.skip === 0}
+                    className="h-8"
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => loadData(pagination.skip + pagination.limit, searchQuery)}
+                    disabled={pagination.skip + pagination.limit >= pagination.total}
+                    className="h-8"
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
           </TabsContent>
