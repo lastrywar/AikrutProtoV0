@@ -382,6 +382,40 @@ export const Analysis = () => {
     }
   };
 
+  const handleGeneratePDF = async () => {
+    if (selectedPdfCandidates.length === 0) {
+      toast.error('Please select at least one candidate');
+      return;
+    }
+
+    setGeneratingPdf(true);
+    try {
+      const response = await analysisAPI.generatePDF({
+        job_id: selectedJob,
+        candidate_ids: selectedPdfCandidates
+      });
+      
+      // Create a blob from the response and trigger download
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('PDF report generated successfully');
+      setPdfDialogOpen(false);
+      setSelectedPdfCandidates([]);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Failed to generate PDF');
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
   const getCandidateName = (result) => {
     const candidate = candidatesMap[result.candidate_id];
     if (candidate) return candidate.name;
