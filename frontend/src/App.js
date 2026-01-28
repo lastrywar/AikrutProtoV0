@@ -9,6 +9,7 @@ import { Toaster } from "./components/ui/sonner";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { AdminLogin } from "./pages/AdminLogin";
+import { PendingApproval } from "./pages/PendingApproval";
 
 // Lazy load heavy pages for code splitting
 const Dashboard = lazy(() => import("./pages/Dashboard").then(module => ({ default: module.Dashboard })));
