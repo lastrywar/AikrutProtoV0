@@ -33,14 +33,14 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'talent-ai-secret-key-2024')
+JWT_SECRET = os.environ.get('JWT_SECRET', 'aikrut-secret-key-2024')
 JWT_ALGORITHM = 'HS256'
 JWT_EXPIRATION_HOURS = 24
 
 # Super Admin Configuration
 SUPER_ADMIN_USERNAME = "admin"
 SUPER_ADMIN_PASSWORD = "MakanBaksoSapi99"
-ADMIN_JWT_SECRET = os.environ.get('ADMIN_JWT_SECRET', 'talent-ai-admin-secret-key-2024')
+ADMIN_JWT_SECRET = os.environ.get('ADMIN_JWT_SECRET', 'aikrut-admin-secret-key-2024')
 
 # Create the main app
 app = FastAPI(title="Aikrut - CV Screening Platform")
