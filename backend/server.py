@@ -584,6 +584,8 @@ async def call_openrouter_with_usage(
         "cost": float (estimated from OpenRouter response)
     }
     """
+    logger.info(f"call_openrouter_with_usage called - has_key: {bool(api_key)}, key_length: {len(api_key) if api_key else 0}, model: {model}")
+    
     if not api_key:
         raise HTTPException(status_code=400, detail="OpenRouter API key not configured. Please configure in admin settings.")
     
