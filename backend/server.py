@@ -1337,10 +1337,16 @@ async def get_global_ai_settings() -> dict:
     """Get global AI settings from admin settings."""
     settings = await db.admin_settings.find_one({"type": "global"}, {"_id": 0})
     if not settings:
+        logger.warning("No global AI settings found, returning defaults")
         return {
             "openrouter_api_key": "",
             "model_name": "openai/gpt-4o-mini"
         }
+    
+    # Log that we're using global settings (without exposing key)
+    has_key = bool(settings.get("openrouter_api_key"))
+    logger.info(f"Global AI settings retrieved - has API key: {has_key}, model: {settings.get('model_name')}")
+    
     return settings
 
 # ==================== COMPANY ROUTES ====================
