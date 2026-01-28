@@ -2447,7 +2447,23 @@ Return ONLY the JSON object, no other text."""
 
     try:
         messages = [{"role": "user", "content": prompt}]
-        response = await call_openrouter(api_key, model, messages, temperature=0.2)
+        
+        # Use with_usage version if user_id is provided for credit tracking
+        if user_id:
+            result = await call_openrouter_with_usage(api_key, model, messages, temperature=0.2)
+            response = result["content"]
+            
+            # Deduct credits
+            await deduct_credits(
+                user_id,
+                "tag_extraction",
+                result["tokens_used"],
+                result["cost"],
+                model
+            )
+        else:
+            # Fallback to old version (without credit tracking)
+            response = await call_openrouter(api_key, model, messages, temperature=0.2)
         
         # Parse JSON response
         json_start = response.find('{')
