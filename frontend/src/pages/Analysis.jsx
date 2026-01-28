@@ -9,6 +9,7 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { jobsAPI, candidatesAPI, analysisAPI } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { 
   BarChart3, Play, Loader2, Users, Target, Wrench, 
   Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight,
