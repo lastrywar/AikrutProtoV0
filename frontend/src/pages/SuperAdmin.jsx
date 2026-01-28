@@ -165,7 +165,7 @@ export const SuperAdmin = () => {
             </div>
             <div>
               <h1 className="font-heading font-bold text-xl text-slate-900">Super Admin</h1>
-              <p className="text-sm text-slate-500">TalentAI Control Panel</p>
+              <p className="text-sm text-slate-500">Aikrut Control Panel</p>
             </div>
           </div>
           

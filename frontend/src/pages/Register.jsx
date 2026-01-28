@@ -49,7 +49,7 @@ export const Register = () => {
             <Sparkles className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="font-heading font-bold text-2xl text-slate-900">TalentAI</h1>
+            <h1 className="font-heading font-bold text-2xl text-slate-900">Aikrut</h1>
             <p className="text-sm text-slate-500">CV Screening Platform</p>
           </div>
         </div>

@@ -54,7 +54,7 @@ export const AdminLogin = () => {
           </div>
           <div>
             <h1 className="font-heading font-bold text-2xl text-white">Super Admin</h1>
-            <p className="text-sm text-purple-200">TalentAI Control Panel</p>
+            <p className="text-sm text-purple-200">Aikrut Control Panel</p>
           </div>
         </div>
 
