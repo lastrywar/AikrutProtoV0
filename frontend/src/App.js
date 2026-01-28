@@ -28,6 +28,10 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           
+          {/* Admin Routes */}
+          <Route path="/admin-login" element={<AdminLogin />} />
+          <Route path="/super-admin" element={<SuperAdmin />} />
+          
           {/* Protected Routes */}
           <Route element={<MainLayout />}>
             <Route path="/dashboard" element={<Dashboard />} />
