@@ -697,7 +697,11 @@ async def register(user_data: UserCreate):
         "password": hash_password(user_data.password),
         "name": user_data.name,
         "company_id": None,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_approved": False,  # Requires admin approval
+        "is_active": False,    # Activated upon approval
+        "credits": 0.0,        # Will be set by admin upon approval
+        "expiry_date": None    # Optional, can be set by admin
     }
     
     await db.users.insert_one(user)
@@ -710,6 +714,7 @@ async def register(user_data: UserCreate):
         "language": "en"
     })
     
+    # Return token but user will be blocked until approved
     token = create_token(user_id)
     return TokenResponse(
         access_token=token,
@@ -718,7 +723,11 @@ async def register(user_data: UserCreate):
             email=user_data.email,
             name=user_data.name,
             company_id=None,
-            created_at=user["created_at"]
+            created_at=user["created_at"],
+            is_approved=False,
+            is_active=False,
+            credits=0.0,
+            expiry_date=None
         )
     )
 
