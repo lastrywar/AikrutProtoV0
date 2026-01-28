@@ -2,35 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { TopBar } from '../components/layout/TopBar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { settingsAPI } from '../lib/api';
-import { Key, Globe, Cpu, Save, Loader2, Eye, EyeOff, CheckCircle } from 'lucide-react';
+import { Globe, Save, Loader2, DollarSign, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-
-const AI_MODELS = [
-  { value: 'openai/gpt-4o', label: 'GPT-4o (Recommended)' },
-  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini (Faster)' },
-  { value: 'openai/gpt-4-turbo', label: 'GPT-4 Turbo' },
-  { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { value: 'anthropic/claude-3-opus', label: 'Claude 3 Opus' },
-  { value: 'google/gemini-pro-1.5', label: 'Gemini Pro 1.5' },
-  { value: 'meta-llama/llama-3-70b-instruct', label: 'Llama 3 70B' },
-];
+import { useAuth } from '../context/AuthContext';
 
 export const Settings = () => {
+  const { user } = useAuth();
   const [settings, setSettings] = useState({
-    openrouter_api_key: '',
-    model_name: 'openai/gpt-4o-mini',
-    language: 'en',
-    has_api_key: false,
-    openrouter_api_key_masked: ''
+    language: 'en'
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [newApiKey, setNewApiKey] = useState('');
 
   useEffect(() => {
     loadSettings();
@@ -39,7 +24,9 @@ export const Settings = () => {
   const loadSettings = async () => {
     try {
       const res = await settingsAPI.get();
-      setSettings(res.data);
+      setSettings({
+        language: res.data.language || 'en'
+      });
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -50,18 +37,10 @@ export const Settings = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const updateData = {
-        model_name: settings.model_name,
+      await settingsAPI.update({
         language: settings.language
-      };
-      
-      if (newApiKey) {
-        updateData.openrouter_api_key = newApiKey;
-      }
-      
-      await settingsAPI.update(updateData);
-      toast.success('Settings saved');
-      setNewApiKey('');
+      });
+      toast.success('Language settings saved');
       loadSettings();
     } catch (error) {
       toast.error('Failed to save settings');
@@ -80,145 +59,85 @@ export const Settings = () => {
 
   return (
     <div className="min-h-screen" data-testid="settings-page">
-      <TopBar title="Settings" subtitle="Configure your workspace" />
+      <TopBar title="Settings" subtitle="Configure your preferences" />
       
       <div className="p-8 max-w-2xl">
-        <div className="space-y-6">
-          {/* API Configuration */}
-          <Card className="border-slate-100 shadow-soft">
-            <CardHeader>
-              <CardTitle className="font-heading flex items-center gap-2">
-                <Key className="w-5 h-5 text-indigo-500" />
-                OpenRouter API
-              </CardTitle>
-              <CardDescription>
-                Configure your OpenRouter API key for AI features
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {settings.has_api_key && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 text-sm">
-                  <CheckCircle className="w-4 h-4" />
-                  API key configured: {settings.openrouter_api_key_masked}
+        {/* Credit Balance Card */}
+        <Card className="border-slate-100 shadow-soft mb-6 bg-gradient-to-br from-indigo-50 to-purple-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm text-slate-600">Available Credits</p>
+                  <p className="text-3xl font-bold text-slate-900">
+                    {user?.credits?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+              </div>
+              {user?.credits <= 0 && (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-100 text-red-700 text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Please top up to use AI features</span>
                 </div>
               )}
-              
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">{settings.has_api_key ? 'Update API Key' : 'API Key'}</Label>
-                <div className="relative">
-                  <Input
-                    id="apiKey"
-                    type={showApiKey ? 'text' : 'password'}
-                    value={newApiKey}
-                    onChange={(e) => setNewApiKey(e.target.value)}
-                    placeholder={settings.has_api_key ? 'Enter new key to update' : 'sk-or-...'}
-                    className="pr-10"
-                    data-testid="api-key-input"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Get your API key from{' '}
-                  <a 
-                    href="https://openrouter.ai/keys" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-indigo-600 hover:underline"
-                  >
-                    openrouter.ai/keys
-                  </a>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <p className="text-xs text-slate-500 mt-3">
+              Credits are used for AI-powered features like CV analysis, job description generation, and more.
+              Contact admin to top up your credits.
+            </p>
+          </CardContent>
+        </Card>
 
-          {/* AI Model Selection */}
-          <Card className="border-slate-100 shadow-soft">
-            <CardHeader>
-              <CardTitle className="font-heading flex items-center gap-2">
-                <Cpu className="w-5 h-5 text-indigo-500" />
-                AI Model
-              </CardTitle>
-              <CardDescription>
-                Enter or select the AI model for analysis and generation
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="modelName">Model Name</Label>
-                <Input
-                  id="modelName"
-                  value={settings.model_name}
-                  onChange={(e) => setSettings(prev => ({ ...prev, model_name: e.target.value }))}
-                  placeholder="e.g., openai/gpt-4o or anthropic/claude-3.5-sonnet"
-                  data-testid="model-input"
-                />
-                <p className="text-xs text-slate-500">
-                  Paste any model from{' '}
-                  <a 
-                    href="https://openrouter.ai/models" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-indigo-600 hover:underline"
-                  >
-                    openrouter.ai/models
-                  </a>
-                </p>
-              </div>
-              
-              <div className="space-y-2">
-                <Label className="text-slate-500 text-sm">Quick Select</Label>
-                <div className="flex flex-wrap gap-2">
-                  {AI_MODELS.map(model => (
-                    <button
-                      key={model.value}
-                      type="button"
-                      onClick={() => setSettings(prev => ({ ...prev, model_name: model.value }))}
-                      className={`px-3 py-1.5 text-xs rounded-full border transition-all ${
-                        settings.model_name === model.value
-                          ? 'bg-indigo-100 border-indigo-300 text-indigo-700'
-                          : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200 hover:bg-indigo-50'
-                      }`}
-                      data-testid={`model-quick-${model.value.replace(/\//g, '-')}`}
-                    >
-                      {model.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="space-y-6">
           {/* Language Settings */}
           <Card className="border-slate-100 shadow-soft">
             <CardHeader>
               <CardTitle className="font-heading flex items-center gap-2">
                 <Globe className="w-5 h-5 text-indigo-500" />
-                Language
+                Language Preferences
               </CardTitle>
               <CardDescription>
-                Set the language for AI-generated content
+                Set your language for the application and AI-generated content
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Select
-                value={settings.language}
-                onValueChange={(v) => setSettings(prev => ({ ...prev, language: v }))}
-              >
-                <SelectTrigger data-testid="language-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="id">Indonesian (Bahasa Indonesia)</SelectItem>
-                </SelectContent>
-              </Select>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="appLanguage">Application Language</Label>
+                <Select
+                  value={settings.language}
+                  onValueChange={(v) => setSettings(prev => ({ ...prev, language: v }))}
+                >
+                  <SelectTrigger data-testid="language-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">English</SelectItem>
+                    <SelectItem value="id">Indonesian (Bahasa Indonesia)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-500">
+                  This language will be used for the interface and AI-generated analysis results
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Info Card */}
+          <Card className="border-blue-100 bg-blue-50 shadow-soft">
+            <CardContent className="pt-6">
+              <div className="flex gap-3">
+                <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-900">
+                  <p className="font-medium mb-1">Administrator Managed Settings</p>
+                  <p className="text-blue-700">
+                    AI model configuration and API settings are managed by your administrator.
+                    If you need assistance with these settings, please contact your admin.
+                  </p>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
