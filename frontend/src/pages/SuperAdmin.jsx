@@ -45,15 +45,20 @@ export const SuperAdmin = () => {
     };
   };
 
-  const loadData = async () => {
+  const loadData = async (skip = 0, search = '') => {
     try {
       const [statsRes, usersRes] = await Promise.all([
         axios.get(`${API_URL}/api/admin/dashboard`, getAuthHeaders()),
-        axios.get(`${API_URL}/api/admin/users`, getAuthHeaders())
+        axios.get(`${API_URL}/api/admin/users?skip=${skip}&limit=20&search=${search}`, getAuthHeaders())
       ]);
       
       setStats(statsRes.data);
       setUsers(usersRes.data.users);
+      setPagination({
+        skip: usersRes.data.skip,
+        limit: usersRes.data.limit,
+        total: usersRes.data.total
+      });
     } catch (error) {
       console.error('Failed to load admin data:', error);
       if (error.response?.status === 401 || error.response?.status === 403) {
