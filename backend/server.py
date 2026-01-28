@@ -1609,15 +1609,34 @@ Make it professional, detailed, and suitable for attracting qualified candidates
     
     response = result["content"]
     
+    def ensure_string(val):
+        """Ensure the value is a string, converting objects/arrays to text"""
+        if isinstance(val, str):
+            return val
+        if val is None:
+            return ""
+        if isinstance(val, list):
+            # Convert list to bullet points
+            return "\n".join([f"• {ensure_string(item)}" if isinstance(item, str) else f"• {json.dumps(item)}" for item in val])
+        if isinstance(val, dict):
+            # If it's a dict, try to extract meaningful text or stringify
+            return json.dumps(val, indent=2)
+        return str(val)
+    
     try:
         json_start = response.find('{')
         json_end = response.rfind('}') + 1
         if json_start >= 0 and json_end > json_start:
             result_data = json.loads(response[json_start:json_end])
-            return result_data
+            # Ensure both fields are strings
+            return {
+                "description": ensure_string(result_data.get("description", "")),
+                "requirements": ensure_string(result_data.get("requirements", ""))
+            }
         else:
             return {"description": response, "requirements": ""}
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to parse job description response: {e}")
         return {"description": response, "requirements": ""}
 
 @api_router.post("/jobs/{job_id}/generate-playbook")
