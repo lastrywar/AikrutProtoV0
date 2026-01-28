@@ -1087,6 +1087,126 @@ async def reject_user(
     updated_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
     return {"message": "User rejected", "user": updated_user}
 
+# Admin Settings Models
+class GlobalSettingsUpdate(BaseModel):
+    openrouter_api_key: Optional[str] = None
+    model_name: Optional[str] = None
+    default_credits_new_user: Optional[float] = None
+
+class CreditRatesUpdate(BaseModel):
+    rates: Dict[str, float]
+
+@api_router.get("/admin/settings")
+async def get_admin_settings(admin: dict = Depends(get_current_admin)):
+    """Get global AI settings managed by admin."""
+    settings = await db.admin_settings.find_one({"type": "global"}, {"_id": 0})
+    if not settings:
+        # Return defaults
+        settings = {
+            "type": "global",
+            "openrouter_api_key": "",
+            "model_name": "openai/gpt-4o-mini",
+            "default_credits_new_user": 100.0,
+            "openrouter_api_key_masked": ""
+        }
+    else:
+        # Mask API key
+        api_key = settings.get("openrouter_api_key", "")
+        if api_key:
+            settings["openrouter_api_key_masked"] = f"{api_key[:10]}...{api_key[-4:]}"
+        else:
+            settings["openrouter_api_key_masked"] = ""
+    
+    return settings
+
+@api_router.put("/admin/settings")
+async def update_admin_settings(
+    update_data: GlobalSettingsUpdate,
+    admin: dict = Depends(get_current_admin)
+):
+    """Update global AI settings."""
+    settings = await db.admin_settings.find_one({"type": "global"}, {"_id": 0})
+    
+    if not settings:
+        # Create new settings
+        settings = {
+            "type": "global",
+            "openrouter_api_key": "",
+            "model_name": "openai/gpt-4o-mini",
+            "default_credits_new_user": 100.0
+        }
+    
+    # Update fields
+    if update_data.openrouter_api_key is not None:
+        settings["openrouter_api_key"] = update_data.openrouter_api_key
+    if update_data.model_name is not None:
+        settings["model_name"] = update_data.model_name
+    if update_data.default_credits_new_user is not None:
+        settings["default_credits_new_user"] = update_data.default_credits_new_user
+    
+    # Upsert settings
+    await db.admin_settings.update_one(
+        {"type": "global"},
+        {"$set": settings},
+        upsert=True
+    )
+    
+    return {"message": "Settings updated successfully", "settings": settings}
+
+@api_router.get("/admin/credit-rates")
+async def get_credit_rates(admin: dict = Depends(get_current_admin)):
+    """Get credit rate multipliers for different operations."""
+    rates = await db.admin_settings.find_one({"type": "credit_rates"}, {"_id": 0})
+    if not rates:
+        return {"rates": DEFAULT_CREDIT_RATES}
+    return rates
+
+@api_router.put("/admin/credit-rates")
+async def update_credit_rates(
+    update_data: CreditRatesUpdate,
+    admin: dict = Depends(get_current_admin)
+):
+    """Update credit rate multipliers."""
+    await db.admin_settings.update_one(
+        {"type": "credit_rates"},
+        {"$set": {"type": "credit_rates", "rates": update_data.rates}},
+        upsert=True
+    )
+    return {"message": "Credit rates updated successfully", "rates": update_data.rates}
+
+@api_router.get("/admin/usage-logs")
+async def get_usage_logs(
+    admin: dict = Depends(get_current_admin),
+    limit: int = 100,
+    user_id: Optional[str] = None
+):
+    """Get credit usage logs."""
+    query = {}
+    if user_id:
+        query["user_id"] = user_id
+    
+    logs_cursor = db.credit_usage_logs.find(query, {"_id": 0}).sort("created_at", -1).limit(limit)
+    logs = []
+    async for log in logs_cursor:
+        # Get user info
+        user = await db.users.find_one({"id": log["user_id"]}, {"_id": 0, "email": 1, "name": 1})
+        log["user_email"] = user.get("email", "Unknown") if user else "Unknown"
+        log["user_name"] = user.get("name", "Unknown") if user else "Unknown"
+        logs.append(log)
+    
+    return {"logs": logs}
+
+# Helper function to get global settings
+async def get_global_ai_settings() -> dict:
+    """Get global AI settings from admin settings."""
+    settings = await db.admin_settings.find_one({"type": "global"}, {"_id": 0})
+    if not settings:
+        return {
+            "openrouter_api_key": "",
+            "model_name": "openai/gpt-4o-mini"
+        }
+    return settings
+
 # ==================== COMPANY ROUTES ====================
 
 @api_router.post("/company", response_model=CompanyResponse)
