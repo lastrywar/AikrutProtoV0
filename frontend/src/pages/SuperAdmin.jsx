@@ -354,29 +354,50 @@ export const SuperAdmin = () => {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        {editingCredits[user.id] !== undefined ? (
+                        {addingCredits[user.id] !== undefined ? (
                           <div className="flex items-center gap-2">
                             <Input
                               type="number"
-                              value={editingCredits[user.id]}
-                              onChange={(e) => setEditingCredits(prev => ({ ...prev, [user.id]: e.target.value }))}
-                              className="w-24 h-8"
-                              step="0.01"
+                              value={addingCredits[user.id]}
+                              onChange={(e) => setAddingCredits(prev => ({ ...prev, [user.id]: e.target.value }))}
+                              placeholder="Amount"
+                              className="w-20 h-8"
+                              step="1"
                             />
                             <Button
                               size="sm"
-                              onClick={() => handleUpdateCredits(user.id, editingCredits[user.id])}
+                              onClick={() => handleAddCredits(user.id, parseFloat(addingCredits[user.id] || 0))}
+                              className="h-8 px-2 bg-green-500 hover:bg-green-600"
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => handleSubtractCredits(user.id, parseFloat(addingCredits[user.id] || 0))}
+                              className="h-8 px-2 bg-red-500 hover:bg-red-600"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setAddingCredits(prev => {
+                                const updated = { ...prev };
+                                delete updated[user.id];
+                                return updated;
+                              })}
                               className="h-8 px-2"
                             >
-                              <Save className="w-3 h-3" />
+                              <X className="w-3 h-3" />
                             </Button>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-slate-900">{user.credits?.toFixed(2) || '0.00'}</span>
                             <button
-                              onClick={() => setEditingCredits(prev => ({ ...prev, [user.id]: user.credits || 0 }))}
+                              onClick={() => setAddingCredits(prev => ({ ...prev, [user.id]: '' }))}
                               className="text-slate-400 hover:text-purple-600"
+                              title="Add/Subtract credits"
                             >
                               <Edit2 className="w-3 h-3" />
                             </button>
