@@ -1204,6 +1204,105 @@ export const Analysis = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* PDF Generation Dialog */}
+      <Dialog open={pdfDialogOpen} onOpenChange={setPdfDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Generate PDF Report</DialogTitle>
+            <DialogDescription>
+              Select candidates to include in the PDF report
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Select All */}
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+              <Checkbox
+                checked={selectedPdfCandidates.length === selectedResults.length}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setSelectedPdfCandidates(selectedResults.map(r => r.candidate_id));
+                  } else {
+                    setSelectedPdfCandidates([]);
+                  }
+                }}
+              />
+              <span className="font-medium text-sm">
+                Select All ({selectedResults.length} candidates)
+              </span>
+            </div>
+
+            {/* Candidate List */}
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {selectedResults
+                .sort((a, b) => b.final_score - a.final_score)
+                .map((result) => (
+                  <div
+                    key={result.candidate_id}
+                    className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50"
+                  >
+                    <Checkbox
+                      checked={selectedPdfCandidates.includes(result.candidate_id)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedPdfCandidates(prev => [...prev, result.candidate_id]);
+                        } else {
+                          setSelectedPdfCandidates(prev => prev.filter(id => id !== result.candidate_id));
+                        }
+                      }}
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{getCandidateName(result)}</p>
+                      <p className="text-xs text-slate-500">
+                        {new Date(result.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <span className={`text-lg font-bold ${getScoreColor(result.final_score)}`}>
+                      {Math.round(result.final_score)}%
+                    </span>
+                  </div>
+                ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-4 border-t">
+              <p className="text-sm text-slate-500">
+                {selectedPdfCandidates.length} candidate(s) selected
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPdfDialogOpen(false);
+                    setSelectedPdfCandidates([]);
+                  }}
+                  disabled={generatingPdf}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleGeneratePDF}
+                  disabled={generatingPdf || selectedPdfCandidates.length === 0}
+                  className="bg-indigo-500 hover:bg-indigo-600"
+                >
+                  {generatingPdf ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Generate PDF
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
