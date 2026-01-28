@@ -3085,8 +3085,17 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
     if not job.get("playbook"):
         raise HTTPException(status_code=400, detail="Job playbook not configured")
     
+    # Check credits first
+    credit_check = await check_user_credits(current_user["id"])
+    if not credit_check.has_credits:
+        raise HTTPException(status_code=402, detail=credit_check.message)
+    
     company = await db.companies.find_one({"id": current_user["company_id"]}, {"_id": 0})
-    settings = await get_ai_settings(current_user["id"])
+    
+    # Get global settings and user language preference
+    global_settings = await get_global_ai_settings()
+    user_settings = await get_ai_settings(current_user["id"])
+    logger.info(f"Streaming Analysis: Retrieved global settings - has_key: {bool(global_settings.get('openrouter_api_key'))}, model: {global_settings.get('model_name')}")
     
     # Get prompts from admin settings
     admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
