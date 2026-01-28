@@ -1027,7 +1027,7 @@ export const Analysis = () => {
                             const catResult = result.category_scores?.find(c => c.category === category);
                             const score = catResult?.score || 0;
                             return (
-                              <div key={category} className="col-span-2 text-center">
+                              <div key={category} className="text-center">
                                 <span className={`text-sm font-medium ${getScoreColor(score)}`}>
                                   {Math.round(score)}%
                                 </span>
@@ -1036,14 +1036,14 @@ export const Analysis = () => {
                           })}
 
                           {/* Company Values Score */}
-                          <div className="col-span-1 text-center">
+                          <div className="text-center">
                             <span className={`text-sm font-medium ${getScoreColor(result.company_values_alignment?.score || 0)}`}>
                               {Math.round(result.company_values_alignment?.score || 0)}%
                             </span>
                           </div>
 
                           {/* Actions */}
-                          <div className="col-span-1 text-center">
+                          <div className="text-center">
                             <Button
                               variant="ghost"
                               size="sm"
