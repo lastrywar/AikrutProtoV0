@@ -21,6 +21,8 @@ export const SuperAdmin = () => {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [editingCredits, setEditingCredits] = useState({});
+  const [pagination, setPagination] = useState({ skip: 0, limit: 20, total: 0 });
+  const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
