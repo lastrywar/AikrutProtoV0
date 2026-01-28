@@ -92,6 +92,9 @@ export const Analysis = () => {
   
   // Detail view
   const [detailModalResult, setDetailModalResult] = useState(null);
+  const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
+  const [selectedPdfCandidates, setSelectedPdfCandidates] = useState([]);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     loadJobs();
