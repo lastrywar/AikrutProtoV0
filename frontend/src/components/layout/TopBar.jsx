@@ -1,22 +1,15 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Avatar, AvatarFallback } from '../ui/avatar';
-import { Bell, DollarSign, RefreshCw } from 'lucide-react';
+import { Bell, DollarSign } from 'lucide-react';
 
 export const TopBar = ({ title, subtitle }) => {
   const { user, refreshUser } = useAuth();
-  const [refreshing, setRefreshing] = useState(false);
   
-  // Refresh user data every 5 seconds to keep credit balance updated
+  // Refresh user data when component mounts (page navigation)
   useEffect(() => {
-    const interval = setInterval(async () => {
-      setRefreshing(true);
-      await refreshUser();
-      setRefreshing(false);
-    }, 5000); // 5 seconds for faster updates
-    
-    return () => clearInterval(interval);
-  }, [refreshUser]);
+    refreshUser();
+  }, []);
   
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
@@ -30,16 +23,13 @@ export const TopBar = ({ title, subtitle }) => {
       </div>
       
       <div className="flex items-center gap-4">
-        {/* Credit Balance */}
+        {/* Credit Balance - Clean display without spinning icon */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100">
           <DollarSign className="w-4 h-4 text-indigo-600" />
           <span className="text-sm font-semibold text-indigo-900">
             {user?.credits !== undefined ? user.credits.toFixed(2) : '0.00'}
           </span>
           <span className="text-xs text-indigo-600">credits</span>
-          {refreshing && (
-            <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin" />
-          )}
         </div>
         
         <button 
