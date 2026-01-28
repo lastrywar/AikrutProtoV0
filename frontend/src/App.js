@@ -19,7 +19,6 @@ const JobEdit = lazy(() => import("./pages/JobEdit").then(module => ({ default: 
 const Candidates = lazy(() => import("./pages/Candidates").then(module => ({ default: module.Candidates })));
 const Analysis = lazy(() => import("./pages/Analysis").then(module => ({ default: module.Analysis })));
 const Settings = lazy(() => import("./pages/Settings").then(module => ({ default: module.Settings })));
-const AdminSettings = lazy(() => import("./pages/AdminSettings").then(module => ({ default: module.AdminSettings })));
 const SuperAdmin = lazy(() => import("./pages/SuperAdmin").then(module => ({ default: module.SuperAdmin })));
 
 // Loading component
