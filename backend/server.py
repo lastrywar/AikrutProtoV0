@@ -313,13 +313,23 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
         
-        # Check if user is approved and active
-        if not user.get("is_approved", False):
-            raise HTTPException(status_code=403, detail="Account pending approval")
-        if not user.get("is_active", False):
-            raise HTTPException(status_code=403, detail="Account is inactive")
+        # Backward compatibility: if user doesn't have these fields, set defaults
+        if "is_approved" not in user:
+            user["is_approved"] = True
+            user["is_active"] = True
+            user["credits"] = 0.0
+            # Update in database for future
+            await db.users.update_one(
+                {"id": user_id}, 
+                {"$set": {"is_approved": True, "is_active": True, "credits": 0.0}}
+            )
         
-        # Check expiry (if set, only blocks AI features, not login)
+        # Check if user is approved and active (only for new users)
+        if not user.get("is_approved", True):
+            raise HTTPException(status_code=403, detail="Account pending approval. Please wait for admin approval.")
+        if not user.get("is_active", True):
+            raise HTTPException(status_code=403, detail="Account is inactive. Please contact admin.")
+        
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
