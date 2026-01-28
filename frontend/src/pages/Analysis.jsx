@@ -1146,8 +1146,6 @@ export const Analysis = () => {
               </div>
             </div>
           )}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </div>
