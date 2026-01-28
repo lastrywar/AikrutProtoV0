@@ -981,6 +981,17 @@ export const Analysis = () => {
                 )}
               </CardTitle>
               <div className="flex items-center gap-3">
+                {/* Standalone Download Report Button */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openPdfDialog}
+                  className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                  data-testid="download-report-btn"
+                >
+                  <FileText className="w-4 h-4 mr-1" />
+                  Download Report
+                </Button>
                 {results.length > 0 && (
                   <>
                     <div className="flex items-center gap-2">
@@ -995,27 +1006,16 @@ export const Analysis = () => {
                       />
                     </div>
                     {selectedResults.length > 0 && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setPdfDialogOpen(true)}
-                          className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                        >
-                          <FileText className="w-4 h-4 mr-1" />
-                          Download PDF ({selectedResults.length})
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleBulkDeleteResults}
-                          disabled={deleting}
-                          className="text-red-600 border-red-200 hover:bg-red-50"
-                        >
-                          {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
-                          Delete ({selectedResults.length})
-                        </Button>
-                      </>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleBulkDeleteResults}
+                        disabled={deleting}
+                        className="text-red-600 border-red-200 hover:bg-red-50"
+                      >
+                        {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
+                        Delete ({selectedResults.length})
+                      </Button>
                     )}
                   </>
                 )}
