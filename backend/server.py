@@ -1346,8 +1346,10 @@ async def get_global_ai_settings() -> dict:
         }
     
     # Log that we're using global settings (without exposing key)
-    has_key = bool(settings.get("openrouter_api_key"))
-    logger.info(f"Global AI settings retrieved - has API key: {has_key}, model: {settings.get('model_name')}")
+    api_key = settings.get("openrouter_api_key", "")
+    has_key = bool(api_key)
+    key_length = len(api_key) if api_key else 0
+    logger.info(f"Global AI settings retrieved - has API key: {has_key}, key_length: {key_length}, model: {settings.get('model_name')}")
     
     return settings
 
