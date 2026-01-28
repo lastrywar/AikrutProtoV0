@@ -1609,18 +1609,39 @@ Make it professional, detailed, and suitable for attracting qualified candidates
     
     response = result["content"]
     
-    def ensure_string(val):
-        """Ensure the value is a string, converting objects/arrays to text"""
-        if isinstance(val, str):
-            return val
+    def flatten_to_string(val, depth=0):
+        """Recursively flatten any value to a readable string"""
+        if depth > 5:  # Prevent infinite recursion
+            return str(val)
         if val is None:
             return ""
+        if isinstance(val, str):
+            return val
+        if isinstance(val, (int, float, bool)):
+            return str(val)
         if isinstance(val, list):
-            # Convert list to bullet points
-            return "\n".join([f"• {ensure_string(item)}" if isinstance(item, str) else f"• {json.dumps(item)}" for item in val])
+            # Convert list items to bullet points
+            items = []
+            for item in val:
+                flat_item = flatten_to_string(item, depth + 1)
+                if flat_item:
+                    items.append(f"• {flat_item}")
+            return "\n".join(items)
         if isinstance(val, dict):
-            # If it's a dict, try to extract meaningful text or stringify
-            return json.dumps(val, indent=2)
+            # Try to extract text content from common keys
+            text_keys = ['text', 'content', 'value', 'description', 'name', 'title', 'item']
+            for key in text_keys:
+                if key in val and isinstance(val[key], str):
+                    return val[key]
+            # If dict has items, format them
+            items = []
+            for k, v in val.items():
+                flat_v = flatten_to_string(v, depth + 1)
+                if flat_v:
+                    items.append(f"• {k}: {flat_v}")
+            if items:
+                return "\n".join(items)
+            return ""
         return str(val)
     
     try:
@@ -1628,12 +1649,21 @@ Make it professional, detailed, and suitable for attracting qualified candidates
         json_end = response.rfind('}') + 1
         if json_start >= 0 and json_end > json_start:
             result_data = json.loads(response[json_start:json_end])
-            # Ensure both fields are strings
+            
+            # Log the raw parsed data for debugging
+            logger.info(f"Parsed job description data types - description: {type(result_data.get('description'))}, requirements: {type(result_data.get('requirements'))}")
+            
+            desc = flatten_to_string(result_data.get("description", ""))
+            reqs = flatten_to_string(result_data.get("requirements", ""))
+            
+            logger.info(f"Flattened results - description length: {len(desc)}, requirements length: {len(reqs)}")
+            
             return {
-                "description": ensure_string(result_data.get("description", "")),
-                "requirements": ensure_string(result_data.get("requirements", ""))
+                "description": desc,
+                "requirements": reqs
             }
         else:
+            logger.warning("No JSON found in AI response, returning raw text")
             return {"description": response, "requirements": ""}
     except Exception as e:
         logger.warning(f"Failed to parse job description response: {e}")
