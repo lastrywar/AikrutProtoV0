@@ -851,23 +851,33 @@ export const Analysis = () => {
                       <span>Select a job and candidates to run analysis</span>
                     )}
                   </div>
-                  <Button
-                    onClick={runAnalysis}
-                    disabled={!selectedJob || selectedCandidates.length === 0 || analyzing}
-                    className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full px-6"
-                  >
-                    {analyzing ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-4 h-4 mr-2" />
-                        Run Analysis
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setPdfDialogOpen(true)}
+                      className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                    >
+                      <FileText className="w-4 h-4 mr-2" />
+                      Download Report
+                    </Button>
+                    <Button
+                      onClick={runAnalysis}
+                      disabled={!selectedJob || selectedCandidates.length === 0 || analyzing}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white rounded-full px-6"
+                    >
+                      {analyzing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Analyzing...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 mr-2" />
+                          Run Analysis
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
