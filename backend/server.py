@@ -1261,9 +1261,16 @@ async def update_company(data: CompanyUpdate, current_user: dict = Depends(get_c
 
 @api_router.post("/company/generate-values")
 async def generate_company_values(narrative: str = Form(...), current_user: dict = Depends(get_current_user)):
-    settings = await get_ai_settings(current_user["id"])
+    # Check credits first
+    credit_check = await check_user_credits(current_user["id"])
+    if not credit_check.has_credits:
+        raise HTTPException(status_code=402, detail=credit_check.message)
     
-    lang_instruction = "Respond in English." if settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
+    # Get global settings and user language preference
+    global_settings = await get_global_ai_settings()
+    user_settings = await get_ai_settings(current_user["id"])
+    
+    lang_instruction = "Respond in English." if user_settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
     
     prompt = f"""Based on this company culture narrative, generate 5-7 structured company values.
 
@@ -1283,10 +1290,26 @@ Requirements:
 - Values should be distinct and meaningful for candidate evaluation"""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages)
+    
+    # Call with usage tracking
+    result = await call_openrouter_with_usage(
+        global_settings["openrouter_api_key"], 
+        global_settings["model_name"], 
+        messages
+    )
+    
+    # Deduct credits
+    await deduct_credits(
+        current_user["id"],
+        "company_values_generation",
+        result["tokens_used"],
+        result["cost"],
+        global_settings["model_name"]
+    )
     
     try:
         # Extract JSON from response
+        response = result["content"]
         json_start = response.find('[')
         json_end = response.rfind(']') + 1
         values_json = response[json_start:json_end]
