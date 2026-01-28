@@ -1523,9 +1523,16 @@ async def delete_job(job_id: str, current_user: dict = Depends(get_current_user)
 
 @api_router.post("/jobs/generate-description")
 async def generate_job_description(title: str = Form(...), context: str = Form(""), current_user: dict = Depends(get_current_user)):
-    settings = await get_ai_settings(current_user["id"])
+    # Check credits first
+    credit_check = await check_user_credits(current_user["id"])
+    if not credit_check.has_credits:
+        raise HTTPException(status_code=402, detail=credit_check.message)
     
-    lang_instruction = "Write in English." if settings.language == "en" else "Write in Indonesian (Bahasa Indonesia)."
+    # Get global settings and user language preference
+    global_settings = await get_global_ai_settings()
+    user_settings = await get_ai_settings(current_user["id"])
+    
+    lang_instruction = "Write in English." if user_settings.language == "en" else "Write in Indonesian (Bahasa Indonesia)."
     
     if context.strip():
         # Generate based on narrative
@@ -1558,14 +1565,31 @@ Return a JSON object with:
 Make it professional, detailed, and suitable for attracting qualified candidates."""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages)
+    
+    # Call with usage tracking
+    result = await call_openrouter_with_usage(
+        global_settings["openrouter_api_key"], 
+        global_settings["model_name"], 
+        messages
+    )
+    
+    # Deduct credits
+    await deduct_credits(
+        current_user["id"],
+        "job_description_generation",
+        result["tokens_used"],
+        result["cost"],
+        global_settings["model_name"]
+    )
+    
+    response = result["content"]
     
     try:
         json_start = response.find('{')
         json_end = response.rfind('}') + 1
         if json_start >= 0 and json_end > json_start:
-            result = json.loads(response[json_start:json_end])
-            return result
+            result_data = json.loads(response[json_start:json_end])
+            return result_data
         else:
             return {"description": response, "requirements": ""}
     except Exception:
