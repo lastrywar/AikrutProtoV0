@@ -339,6 +339,9 @@ class SettingsUpdate(BaseModel):
     openrouter_api_key: Optional[str] = None
     model_name: Optional[str] = None
     language: Optional[str] = None
+    primary_color: Optional[str] = None  # Brand color for PDF reports
+    secondary_color: Optional[str] = None  # Secondary brand color
+    company_logo: Optional[str] = None  # Base64 encoded logo for PDF reports
 
 # ==================== AUTH HELPERS ====================
 
