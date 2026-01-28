@@ -3060,7 +3060,8 @@ Ensure you evaluate ALL items in each category of the playbook. Do not skip any.
             results.append(AnalysisResult(**analysis))
             
         except Exception as e:
-            logger.error(f"Analysis failed for candidate {candidate_id}: {e}")
+            logger.error(f"Analysis failed for candidate {candidate_id}: {str(e)}")
+            # Don't break the batch, continue with next candidate
             continue
     
     return results
