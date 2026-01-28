@@ -2834,8 +2834,16 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
     if not job.get("playbook"):
         raise HTTPException(status_code=400, detail="Job playbook not configured. Generate a playbook first.")
     
+    # Check credits first (estimate for multiple candidates)
+    credit_check = await check_user_credits(current_user["id"])
+    if not credit_check.has_credits:
+        raise HTTPException(status_code=402, detail=credit_check.message)
+    
     company = await db.companies.find_one({"id": current_user["company_id"]}, {"_id": 0})
-    settings = await get_ai_settings(current_user["id"])
+    
+    # Get global settings and user language preference
+    global_settings = await get_global_ai_settings()
+    user_settings = await get_ai_settings(current_user["id"])
     
     results = []
     
@@ -2854,6 +2862,12 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
             results.append(AnalysisResult(**existing))
             continue
         
+        # Check credits before each analysis
+        credit_check = await check_user_credits(current_user["id"])
+        if not credit_check.has_credits:
+            # If we run out of credits mid-batch, stop and return what we have
+            break
+        
         # Compile all evidence
         all_evidence = "\n\n".join([
             f"=== {e['type'].upper()} ({e['file_name']}) ===\n{e['content']}"
@@ -2863,7 +2877,7 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
         if not all_evidence:
             continue
         
-        lang_instruction = "Respond in English." if settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
+        lang_instruction = "Respond in English." if user_settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
         
         company_values_text = ""
         if company and company.get("values"):
