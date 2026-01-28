@@ -95,15 +95,27 @@ export const JobEdit = () => {
 
     setSaving(true);
     try {
+      // Ensure all fields are properly typed before sending
+      const jobData = {
+        title: String(form.title || ''),
+        description: String(form.description || ''),
+        requirements: String(form.requirements || ''),
+        location: String(form.location || ''),
+        employment_type: form.employment_type || 'full-time',
+        salary_range: String(form.salary_range || ''),
+        playbook: form.playbook || null
+      };
+      
       if (isNew) {
-        const res = await jobsAPI.create(form);
+        const res = await jobsAPI.create(jobData);
         toast.success('Job created');
         navigate(`/jobs/${res.data.id}`);
       } else {
-        await jobsAPI.update(id, form);
+        await jobsAPI.update(id, jobData);
         toast.success('Job updated');
       }
     } catch (error) {
+      console.error('Save error:', error);
       toast.error(error.response?.data?.detail || 'Failed to save');
     } finally {
       setSaving(false);
