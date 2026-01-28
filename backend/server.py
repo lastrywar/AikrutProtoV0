@@ -767,6 +767,138 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         expiry_date=current_user.get("expiry_date")
     )
 
+# ==================== ADMIN ROUTES ====================
+
+@api_router.post("/admin/login", response_model=AdminTokenResponse)
+async def admin_login(credentials: AdminLogin):
+    if credentials.username != SUPER_ADMIN_USERNAME or credentials.password != SUPER_ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+    
+    token = create_admin_token(credentials.username)
+    return AdminTokenResponse(
+        access_token=token,
+        username=credentials.username
+    )
+
+@api_router.get("/admin/dashboard", response_model=AdminDashboardStats)
+async def get_admin_dashboard(admin: dict = Depends(get_current_admin)):
+    # Aggregate statistics
+    total_users = await db.users.count_documents({})
+    pending_users = await db.users.count_documents({"is_approved": False})
+    active_users = await db.users.count_documents({"is_active": True})
+    total_jobs = await db.jobs.count_documents({})
+    total_candidates = await db.candidates.count_documents({})
+    total_analyses = await db.analyses.count_documents({})
+    
+    # Calculate total credits distributed
+    users_cursor = db.users.find({}, {"credits": 1})
+    total_credits = 0.0
+    async for user in users_cursor:
+        total_credits += user.get("credits", 0.0)
+    
+    return AdminDashboardStats(
+        total_users=total_users,
+        pending_users=pending_users,
+        active_users=active_users,
+        total_jobs=total_jobs,
+        total_candidates=total_candidates,
+        total_analyses=total_analyses,
+        total_credits_distributed=total_credits
+    )
+
+@api_router.get("/admin/users")
+async def get_all_users(admin: dict = Depends(get_current_admin)):
+    users_cursor = db.users.find({}, {"_id": 0, "password": 0})
+    users = []
+    
+    async for user in users_cursor:
+        # Get user statistics
+        user_id = user["id"]
+        jobs_count = await db.jobs.count_documents({"company_id": user.get("company_id")}) if user.get("company_id") else 0
+        candidates_count = await db.candidates.count_documents({"company_id": user.get("company_id")}) if user.get("company_id") else 0
+        analyses_count = await db.analyses.count_documents({"user_id": user_id})
+        
+        users.append({
+            **user,
+            "stats": {
+                "jobs_count": jobs_count,
+                "candidates_count": candidates_count,
+                "analyses_count": analyses_count
+            }
+        })
+    
+    return {"users": users}
+
+@api_router.put("/admin/users/{user_id}")
+async def update_user_by_admin(
+    user_id: str, 
+    update_data: UserUpdateByAdmin,
+    admin: dict = Depends(get_current_admin)
+):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Build update dict
+    update_dict = {}
+    if update_data.is_approved is not None:
+        update_dict["is_approved"] = update_data.is_approved
+    if update_data.is_active is not None:
+        update_dict["is_active"] = update_data.is_active
+    if update_data.credits is not None:
+        update_dict["credits"] = update_data.credits
+    if update_data.expiry_date is not None:
+        update_dict["expiry_date"] = update_data.expiry_date
+    
+    if update_dict:
+        await db.users.update_one({"id": user_id}, {"$set": update_dict})
+    
+    # Return updated user
+    updated_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    return {"user": updated_user}
+
+@api_router.post("/admin/users/{user_id}/approve")
+async def approve_user(
+    user_id: str,
+    default_credits: float = 100.0,
+    admin: dict = Depends(get_current_admin)
+):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "is_approved": True,
+            "is_active": True,
+            "credits": default_credits
+        }}
+    )
+    
+    updated_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    return {"message": "User approved successfully", "user": updated_user}
+
+@api_router.post("/admin/users/{user_id}/reject")
+async def reject_user(
+    user_id: str,
+    admin: dict = Depends(get_current_admin)
+):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "is_approved": False,
+            "is_active": False
+        }}
+    )
+    
+    updated_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    return {"message": "User rejected", "user": updated_user}
+
 # ==================== COMPANY ROUTES ====================
 
 @api_router.post("/company", response_model=CompanyResponse)
