@@ -119,10 +119,31 @@ export const SuperAdmin = () => {
         delete updated[userId];
         return updated;
       });
+      setAddingCredits(prev => {
+        const updated = { ...prev };
+        delete updated[userId];
+        return updated;
+      });
       loadData();
     } catch (error) {
       toast.error('Failed to update credits');
     }
+  };
+
+  const handleAddCredits = async (userId, amount) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    
+    const newTotal = (user.credits || 0) + amount;
+    await handleUpdateCredits(userId, newTotal);
+  };
+
+  const handleSubtractCredits = async (userId, amount) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    
+    const newTotal = (user.credits || 0) - amount;
+    await handleUpdateCredits(userId, newTotal);
   };
 
   if (loading) {
