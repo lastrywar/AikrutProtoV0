@@ -1236,6 +1236,7 @@ export const Analysis = () => {
             {/* Candidate List */}
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {selectedResults
+                .filter(result => !isCandidateDeleted(result)) // Filter out deleted candidates
                 .sort((a, b) => b.final_score - a.final_score)
                 .map((result) => (
                   <div
