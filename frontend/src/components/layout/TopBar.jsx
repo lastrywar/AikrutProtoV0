@@ -1,16 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Avatar, AvatarFallback } from '../ui/avatar';
-import { Bell, DollarSign } from 'lucide-react';
+import { Bell, DollarSign, RefreshCw } from 'lucide-react';
 
 export const TopBar = ({ title, subtitle }) => {
   const { user, refreshUser } = useAuth();
+  const [refreshing, setRefreshing] = useState(false);
   
-  // Refresh user data every 10 seconds to keep credit balance updated
+  // Refresh user data every 5 seconds to keep credit balance updated
   useEffect(() => {
-    const interval = setInterval(() => {
-      refreshUser();
-    }, 10000); // 10 seconds
+    const interval = setInterval(async () => {
+      setRefreshing(true);
+      await refreshUser();
+      setRefreshing(false);
+    }, 5000); // 5 seconds for faster updates
     
     return () => clearInterval(interval);
   }, [refreshUser]);
@@ -34,6 +37,9 @@ export const TopBar = ({ title, subtitle }) => {
             {user?.credits !== undefined ? user.credits.toFixed(2) : '0.00'}
           </span>
           <span className="text-xs text-indigo-600">credits</span>
+          {refreshing && (
+            <RefreshCw className="w-3 h-3 text-indigo-400 animate-spin" />
+          )}
         </div>
         
         <button 
