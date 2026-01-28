@@ -1,23 +1,35 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { MainLayout } from "./components/layout/MainLayout";
 import { Toaster } from "./components/ui/sonner";
 
-// Pages
+// Eager load authentication pages
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
-import { Dashboard } from "./pages/Dashboard";
-import { Company } from "./pages/Company";
-import { Jobs } from "./pages/Jobs";
-import { JobEdit } from "./pages/JobEdit";
-import { Candidates } from "./pages/Candidates";
-import { Analysis } from "./pages/Analysis";
-import { Settings } from "./pages/Settings";
-import { AdminSettings } from "./pages/AdminSettings";
 import { AdminLogin } from "./pages/AdminLogin";
-import { SuperAdmin } from "./pages/SuperAdmin";
+
+// Lazy load heavy pages for code splitting
+const Dashboard = lazy(() => import("./pages/Dashboard").then(module => ({ default: module.Dashboard })));
+const Company = lazy(() => import("./pages/Company").then(module => ({ default: module.Company })));
+const Jobs = lazy(() => import("./pages/Jobs").then(module => ({ default: module.Jobs })));
+const JobEdit = lazy(() => import("./pages/JobEdit").then(module => ({ default: module.JobEdit })));
+const Candidates = lazy(() => import("./pages/Candidates").then(module => ({ default: module.Candidates })));
+const Analysis = lazy(() => import("./pages/Analysis").then(module => ({ default: module.Analysis })));
+const Settings = lazy(() => import("./pages/Settings").then(module => ({ default: module.Settings })));
+const AdminSettings = lazy(() => import("./pages/AdminSettings").then(module => ({ default: module.AdminSettings })));
+const SuperAdmin = lazy(() => import("./pages/SuperAdmin").then(module => ({ default: module.SuperAdmin })));
+
+// Loading component
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-indigo-50">
+    <div className="text-center">
+      <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+      <p className="text-slate-600">Loading...</p>
+    </div>
+  </div>
+);
 
 function App() {
   return (
