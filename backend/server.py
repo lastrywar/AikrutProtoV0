@@ -2961,7 +2961,24 @@ Ensure you evaluate ALL items in each category of the playbook. Do not skip any.
         messages = [{"role": "user", "content": prompt}]
         
         try:
-            response = await call_openrouter(settings.openrouter_api_key, settings.model_name, messages, temperature=0.3)
+            # Use with_usage version for credit tracking
+            result = await call_openrouter_with_usage(
+                global_settings["openrouter_api_key"], 
+                global_settings["model_name"], 
+                messages, 
+                temperature=0.3
+            )
+            
+            response = result["content"]
+            
+            # Deduct credits
+            await deduct_credits(
+                current_user["id"],
+                "candidate_analysis",
+                result["tokens_used"],
+                result["cost"],
+                global_settings["model_name"]
+            )
             
             json_start = response.find('{')
             json_end = response.rfind('}') + 1
