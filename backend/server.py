@@ -62,6 +62,10 @@ class UserResponse(BaseModel):
     name: str
     company_id: Optional[str] = None
     created_at: str
+    is_approved: Optional[bool] = False
+    is_active: Optional[bool] = False
+    credits: Optional[float] = 0.0
+    expiry_date: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str
