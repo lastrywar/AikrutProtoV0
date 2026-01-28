@@ -312,11 +312,69 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+        
+        # Check if user is approved and active
+        if not user.get("is_approved", False):
+            raise HTTPException(status_code=403, detail="Account pending approval")
+        if not user.get("is_active", False):
+            raise HTTPException(status_code=403, detail="Account is inactive")
+        
+        # Check expiry (if set, only blocks AI features, not login)
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+# ==================== ADMIN AUTH HELPERS ====================
+
+class AdminLogin(BaseModel):
+    username: str
+    password: str
+
+class AdminTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    username: str
+
+def create_admin_token(username: str) -> str:
+    payload = {
+        "username": username,
+        "is_admin": True,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+    }
+    return jwt.encode(payload, ADMIN_JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, ADMIN_JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        is_admin = payload.get("is_admin")
+        username = payload.get("username")
+        
+        if not is_admin or username != SUPER_ADMIN_USERNAME:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        return {"username": username, "is_admin": True}
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+
+# Admin Models
+class UserUpdateByAdmin(BaseModel):
+    is_approved: Optional[bool] = None
+    is_active: Optional[bool] = None
+    credits: Optional[float] = None
+    expiry_date: Optional[str] = None
+
+class AdminDashboardStats(BaseModel):
+    total_users: int
+    pending_users: int
+    active_users: int
+    total_jobs: int
+    total_candidates: int
+    total_analyses: int
+    total_credits_distributed: float
 
 # ==================== AI SERVICE ====================
 
