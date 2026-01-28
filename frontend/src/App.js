@@ -41,6 +41,7 @@ function App() {
             {/* Public Routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/pending-approval" element={<PendingApproval />} />
             
             {/* Admin Routes */}
             <Route path="/admin-login" element={<AdminLogin />} />
