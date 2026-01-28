@@ -1219,17 +1219,17 @@ export const Analysis = () => {
             {/* Select All */}
             <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
               <Checkbox
-                checked={selectedPdfCandidates.length === selectedResults.length}
+                checked={selectedPdfCandidates.length === selectedResults.filter(r => !isCandidateDeleted(r)).length && selectedPdfCandidates.length > 0}
                 onCheckedChange={(checked) => {
                   if (checked) {
-                    setSelectedPdfCandidates(selectedResults.map(r => r.candidate_id));
+                    setSelectedPdfCandidates(selectedResults.filter(r => !isCandidateDeleted(r)).map(r => r.candidate_id));
                   } else {
                     setSelectedPdfCandidates([]);
                   }
                 }}
               />
               <span className="font-medium text-sm">
-                Select All ({selectedResults.length} candidates)
+                Select All ({selectedResults.filter(r => !isCandidateDeleted(r)).length} candidates)
               </span>
             </div>
 
