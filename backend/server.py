@@ -3135,7 +3135,7 @@ async def run_streaming_analysis(request: BatchAnalysisRequest, current_user: di
                 yield f"data: {json.dumps({'type': 'progress', 'current': idx + 1, 'total': total, 'candidate_id': candidate_id, 'status': 'skipped', 'message': 'No evidence'})}\n\n"
                 continue
             
-            lang_instruction = "Respond in English." if settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
+            lang_instruction = "Respond in English." if user_settings.language == "en" else "Respond in Indonesian (Bahasa Indonesia)."
             
             company_values_text = ""
             if company and company.get("values"):
