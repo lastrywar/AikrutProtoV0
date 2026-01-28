@@ -1,10 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Bell, DollarSign } from 'lucide-react';
 
 export const TopBar = ({ title, subtitle }) => {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  
+  // Refresh user data every 10 seconds to keep credit balance updated
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshUser();
+    }, 10000); // 10 seconds
+    
+    return () => clearInterval(interval);
+  }, [refreshUser]);
   
   const initials = user?.name
     ? user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
