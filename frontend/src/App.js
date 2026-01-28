@@ -56,7 +56,6 @@ function App() {
               <Route path="/candidates" element={<Candidates />} />
               <Route path="/analysis" element={<Analysis />} />
               <Route path="/settings" element={<Settings />} />
-              <Route path="/admin-settings" element={<AdminSettings />} />
             </Route>
             
             {/* Redirect root to dashboard */}
