@@ -95,8 +95,9 @@ export const Analysis = () => {
   const [pdfDialogOpen, setPdfDialogOpen] = useState(false);
   const [selectedPdfCandidates, setSelectedPdfCandidates] = useState([]);
   const [generatingPdf, setGeneratingPdf] = useState(false);
-  const [pdfJobId, setPdfJobId] = useState(''); // Separate job selection for PDF
+  const [pdfJobId, setPdfJobId] = useState('');
   const [pdfAvailableCandidates, setPdfAvailableCandidates] = useState([]);
+  const [loadingPdfCandidates, setLoadingPdfCandidates] = useState(false);
 
   useEffect(() => {
     loadJobs();
@@ -384,7 +385,51 @@ export const Analysis = () => {
     }
   };
 
+  // Load candidates with analysis results for selected PDF job
+  const loadPdfCandidates = async (jobId) => {
+    if (!jobId) {
+      setPdfAvailableCandidates([]);
+      return;
+    }
+    
+    setLoadingPdfCandidates(true);
+    try {
+      // Get analysis results for this job
+      const res = await analysisAPI.getForJob(jobId);
+      const analysisResults = res.data || [];
+      
+      // Filter out deleted candidates and map to include analysis info
+      const candidatesWithAnalysis = analysisResults
+        .filter(result => candidatesMap[result.candidate_id]) // Only non-deleted
+        .map(result => ({
+          candidate_id: result.candidate_id,
+          candidate_name: candidatesMap[result.candidate_id]?.name || result.candidate_name,
+          final_score: result.final_score,
+          created_at: result.created_at
+        }))
+        .sort((a, b) => b.final_score - a.final_score);
+      
+      setPdfAvailableCandidates(candidatesWithAnalysis);
+    } catch (error) {
+      console.error('Failed to load PDF candidates:', error);
+      setPdfAvailableCandidates([]);
+    } finally {
+      setLoadingPdfCandidates(false);
+    }
+  };
+
+  // Handle PDF job selection change
+  const handlePdfJobChange = (jobId) => {
+    setPdfJobId(jobId);
+    setSelectedPdfCandidates([]);
+    loadPdfCandidates(jobId);
+  };
+
   const handleGeneratePDF = async () => {
+    if (!pdfJobId) {
+      toast.error('Please select a job');
+      return;
+    }
     if (selectedPdfCandidates.length === 0) {
       toast.error('Please select at least one candidate');
       return;
@@ -393,7 +438,7 @@ export const Analysis = () => {
     setGeneratingPdf(true);
     try {
       const response = await analysisAPI.generatePDF({
-        job_id: selectedJob,
+        job_id: pdfJobId,
         candidate_ids: selectedPdfCandidates
       });
       
@@ -402,7 +447,8 @@ export const Analysis = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `Analysis_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      const selectedJobName = jobs.find(j => j.id === pdfJobId)?.title || 'Report';
+      link.download = `Analysis_Report_${selectedJobName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -411,11 +457,21 @@ export const Analysis = () => {
       toast.success('PDF report generated successfully');
       setPdfDialogOpen(false);
       setSelectedPdfCandidates([]);
+      setPdfJobId('');
+      setPdfAvailableCandidates([]);
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Failed to generate PDF');
     } finally {
       setGeneratingPdf(false);
     }
+  };
+
+  // Open PDF dialog and reset state
+  const openPdfDialog = () => {
+    setPdfJobId('');
+    setSelectedPdfCandidates([]);
+    setPdfAvailableCandidates([]);
+    setPdfDialogOpen(true);
   };
 
   const getCandidateName = (result) => {
