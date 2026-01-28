@@ -43,7 +43,7 @@ SUPER_ADMIN_PASSWORD = "MakanBaksoSapi99"
 ADMIN_JWT_SECRET = os.environ.get('ADMIN_JWT_SECRET', 'aikrut-admin-secret-key-2024')
 
 # Create the main app
-app = FastAPI(title="Aikrut - CV Screening Platform")
+app = FastAPI(title="Aikrut - Smart HR Assistant")
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 

@@ -37,7 +37,7 @@ export const Sidebar = () => {
           </div>
           <div>
             <h1 className="font-heading font-bold text-lg text-slate-900">Aikrut</h1>
-            <p className="text-xs text-slate-500">CV Screening Platform</p>
+            <p className="text-xs text-slate-500">Smart HR Assistant</p>
           </div>
         </div>
       </div>
