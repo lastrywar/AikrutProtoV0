@@ -53,6 +53,7 @@ const LAYER_2_CATEGORIES = {
 };
 
 export const Analysis = () => {
+  const { refreshUser } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState('');
   const [selectedJobData, setSelectedJobData] = useState(null);
