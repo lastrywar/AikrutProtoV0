@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { 
   Shield, Users, CheckCircle, XCircle, DollarSign, 
   BarChart3, Briefcase, FileText, TrendingUp, LogOut,
-  Clock, Mail, UserCheck, UserX, Edit2, Save, Settings as SettingsIcon
+  Clock, Mail, UserCheck, UserX, Edit2, Save, Settings as SettingsIcon,
+  Plus, Minus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
