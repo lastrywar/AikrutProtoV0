@@ -1030,53 +1030,19 @@ export const Analysis = () => {
                 </p>
               </div>
 
-              {/* Category Breakdown */}
-              <div className="space-y-4">
-                {detailModalResult.category_scores?.map((catResult) => {
-                  const Icon = getCategoryIcon(catResult.category);
-                  return (
-                    <div key={catResult.category} className="border border-slate-200 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <Icon className="w-5 h-5 text-indigo-500" />
-                          <span className="font-medium capitalize">{catResult.category}</span>
-                        </div>
-                        <span className={`text-lg font-bold ${getScoreColor(catResult.score)}`}>
-                          {Math.round(catResult.score)}%
-                        </span>
-                      </div>
-                      
-                      {/* Breakdown Items */}
-                      {catResult.breakdown && catResult.breakdown.length > 0 && (
-                        <div className="space-y-2">
-                          {catResult.breakdown.map((item, idx) => (
-                            <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
-                              <div className="flex-1">
-                                <div className="flex items-center justify-between mb-1">
-                                  <p className="text-sm font-medium">{item.item_name}</p>
-                                  <span className="text-xs text-slate-400">
-                                    weight: {item.weight}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-500">{item.reasoning}</p>
-                              </div>
-                              <span className={`text-sm font-bold ${getScoreColor(item.raw_score)}`}>
-                                {Math.round(item.raw_score)}%
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              {/* AI Summary - MOVED TO TOP */}
+              {detailModalResult.overall_reasoning && (
+                <div className="p-4 bg-indigo-50 rounded-xl border-2 border-indigo-200">
+                  <p className="text-sm font-medium text-indigo-700 mb-2">📋 AI Summary</p>
+                  <p className="text-sm text-slate-700">{detailModalResult.overall_reasoning}</p>
+                </div>
+              )}
 
-              {/* Strengths & Gaps */}
+              {/* Strengths & Gaps - MOVED TO TOP */}
               <div className="grid grid-cols-2 gap-4">
                 {detailModalResult.strengths && detailModalResult.strengths.length > 0 && (
-                  <div className="p-4 bg-green-50 rounded-xl">
-                    <p className="text-sm font-medium text-green-700 mb-2">Strengths</p>
+                  <div className="p-4 bg-green-50 rounded-xl border-2 border-green-200">
+                    <p className="text-sm font-medium text-green-700 mb-2">✅ Key Strengths</p>
                     <ul className="space-y-1">
                       {detailModalResult.strengths.map((s, idx) => (
                         <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
@@ -1088,8 +1054,8 @@ export const Analysis = () => {
                   </div>
                 )}
                 {detailModalResult.gaps && detailModalResult.gaps.length > 0 && (
-                  <div className="p-4 bg-red-50 rounded-xl">
-                    <p className="text-sm font-medium text-red-700 mb-2">Gaps</p>
+                  <div className="p-4 bg-red-50 rounded-xl border-2 border-red-200">
+                    <p className="text-sm font-medium text-red-700 mb-2">⚠️ Development Areas</p>
                     <ul className="space-y-1">
                       {detailModalResult.gaps.map((g, idx) => (
                         <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
@@ -1102,13 +1068,84 @@ export const Analysis = () => {
                 )}
               </div>
 
-              {/* Overall Reasoning */}
-              {detailModalResult.overall_reasoning && (
-                <div className="p-4 bg-indigo-50 rounded-xl">
-                  <p className="text-sm font-medium text-indigo-700 mb-2">AI Summary</p>
-                  <p className="text-sm text-slate-700">{detailModalResult.overall_reasoning}</p>
+              {/* Company Values Alignment - NEW SECTION */}
+              {detailModalResult.company_values_alignment && (
+                <div className="p-4 bg-purple-50 rounded-xl border-2 border-purple-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-medium text-purple-700">🏢 Company Culture Fit</p>
+                    <span className={`text-lg font-bold ${getScoreColor(detailModalResult.company_values_alignment.score || 0)}`}>
+                      {Math.round(detailModalResult.company_values_alignment.score || 0)}%
+                    </span>
+                  </div>
+                  {detailModalResult.company_values_alignment.notes && (
+                    <p className="text-sm text-slate-700 mb-3">{detailModalResult.company_values_alignment.notes}</p>
+                  )}
+                  {detailModalResult.company_values_alignment.breakdown && detailModalResult.company_values_alignment.breakdown.length > 0 && (
+                    <div className="space-y-2 mt-2">
+                      {detailModalResult.company_values_alignment.breakdown.map((item, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-2 bg-white rounded">
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-sm font-medium">{item.value_name}</p>
+                              <span className={`text-sm font-bold ${getScoreColor(item.score)}`}>
+                                {Math.round(item.score)}%
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500">{item.reasoning}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Category Breakdown - NOW AT BOTTOM */}
+              <div className="border-t-2 border-slate-200 pt-4">
+                <p className="text-sm font-medium text-slate-600 mb-3">📊 Detailed Category Breakdown</p>
+                <div className="space-y-4">
+                  {detailModalResult.category_scores?.map((catResult) => {
+                    const Icon = getCategoryIcon(catResult.category);
+                    return (
+                      <div key={catResult.category} className="border border-slate-200 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Icon className="w-5 h-5 text-indigo-500" />
+                            <span className="font-medium capitalize">{catResult.category}</span>
+                          </div>
+                          <span className={`text-lg font-bold ${getScoreColor(catResult.score)}`}>
+                            {Math.round(catResult.score)}%
+                          </span>
+                        </div>
+                        
+                        {/* Breakdown Items */}
+                        {catResult.breakdown && catResult.breakdown.length > 0 && (
+                          <div className="space-y-2">
+                            {catResult.breakdown.map((item, idx) => (
+                              <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                                <div className="flex-1">
+                                  <div className="flex items-center justify-between mb-1">
+                                    <p className="text-sm font-medium">{item.item_name}</p>
+                                    <span className="text-xs text-slate-400">
+                                      weight: {item.weight}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500">{item.reasoning}</p>
+                                </div>
+                                <span className={`text-sm font-bold ${getScoreColor(item.raw_score)}`}>
+                                  {Math.round(item.raw_score)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
             </div>
           )}
         </DialogContent>
