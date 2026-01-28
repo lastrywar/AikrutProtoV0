@@ -3381,6 +3381,186 @@ async def bulk_delete_analyses(request: BulkDeleteRequest, current_user: dict = 
     result = await db.analyses.delete_many({"id": {"$in": request.ids}})
     return {"message": f"Deleted {result.deleted_count} analysis result(s)"}
 
+class PDFReportRequest(BaseModel):
+    job_id: str
+    candidate_ids: List[str]
+
+@api_router.post("/analysis/generate-pdf")
+async def generate_pdf_report(request: PDFReportRequest, current_user: dict = Depends(get_current_user)):
+    """Generate PDF report for selected candidates"""
+    # Get job details
+    job = await db.jobs.find_one({"id": request.job_id, "company_id": current_user.get("company_id")}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Get company details
+    company = await db.companies.find_one({"id": current_user["company_id"]}, {"_id": 0})
+    
+    # Get user settings for branding (logo, colors)
+    user_settings = await db.settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
+    
+    # Get analyses for selected candidates
+    analyses = []
+    for candidate_id in request.candidate_ids:
+        analysis = await db.analyses.find_one(
+            {"job_id": request.job_id, "candidate_id": candidate_id},
+            {"_id": 0}
+        )
+        if analysis:
+            # Get candidate details
+            candidate = await db.candidates.find_one({"id": candidate_id}, {"_id": 0})
+            analysis["candidate_name"] = candidate.get("name", "Unknown") if candidate else "Unknown"
+            analysis["candidate_email"] = candidate.get("email", "") if candidate else ""
+            analyses.append(analysis)
+    
+    if not analyses:
+        raise HTTPException(status_code=404, detail="No analysis results found for selected candidates")
+    
+    # Generate PDF
+    pdf_buffer = io.BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, topMargin=0.75*inch, bottomMargin=0.75*inch)
+    
+    # Get colors from settings or use defaults
+    primary_color = colors.HexColor(user_settings.get("primary_color", "#6366f1")) if user_settings and user_settings.get("primary_color") else colors.HexColor("#6366f1")
+    secondary_color = colors.HexColor(user_settings.get("secondary_color", "#8b5cf6")) if user_settings and user_settings.get("secondary_color") else colors.HexColor("#8b5cf6")
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Title'],
+        fontSize=24,
+        textColor=primary_color,
+        spaceAfter=20,
+        alignment=TA_CENTER
+    )
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading1'],
+        fontSize=16,
+        textColor=primary_color,
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    normal_style = styles['Normal']
+    
+    story = []
+    
+    # Page 1: Executive Summary
+    story.append(Paragraph(f"<b>{job['title']}</b>", title_style))
+    story.append(Paragraph("Candidate Analysis Report", styles['Heading2']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Job details
+    story.append(Paragraph(f"<b>Job Position:</b> {job['title']}", normal_style))
+    story.append(Paragraph(f"<b>Company:</b> {company.get('name', 'N/A') if company else 'N/A'}", normal_style))
+    story.append(Paragraph(f"<b>Generated:</b> {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", normal_style))
+    story.append(Paragraph(f"<b>Candidates Analyzed:</b> {len(analyses)}", normal_style))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # Top recommendations
+    sorted_analyses = sorted(analyses, key=lambda x: x['final_score'], reverse=True)
+    story.append(Paragraph("<b>Top Recommendations:</b>", heading_style))
+    for idx, analysis in enumerate(sorted_analyses[:3], 1):
+        score_color = "green" if analysis['final_score'] >= 70 else "orange" if analysis['final_score'] >= 50 else "red"
+        story.append(Paragraph(
+            f"{idx}. <b>{analysis['candidate_name']}</b> - "
+            f"<font color='{score_color}'>{round(analysis['final_score'])}%</font>",
+            normal_style
+        ))
+    
+    story.append(PageBreak())
+    
+    # Page 2: Job Details
+    story.append(Paragraph("<b>Job Details</b>", title_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("<b>Job Description:</b>", heading_style))
+    story.append(Paragraph(job.get('description', 'N/A'), normal_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("<b>Requirements:</b>", heading_style))
+    story.append(Paragraph(job.get('requirements', 'N/A'), normal_style))
+    
+    story.append(PageBreak())
+    
+    # Individual candidate analyses
+    for idx, analysis in enumerate(sorted_analyses, 1):
+        story.append(Paragraph(f"<b>Candidate {idx}: {analysis['candidate_name']}</b>", title_style))
+        if analysis.get('candidate_email'):
+            story.append(Paragraph(f"Email: {analysis['candidate_email']}", normal_style))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Overall score
+        score_color = "green" if analysis['final_score'] >= 70 else "orange" if analysis['final_score'] >= 50 else "red"
+        story.append(Paragraph(
+            f"<b>Overall Job Fit Score:</b> <font color='{score_color}' size='20'>{round(analysis['final_score'])}%</font>",
+            heading_style
+        ))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Summary
+        if analysis.get('overall_reasoning'):
+            story.append(Paragraph("<b>Summary:</b>", heading_style))
+            story.append(Paragraph(analysis['overall_reasoning'], normal_style))
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Strengths
+        if analysis.get('strengths'):
+            story.append(Paragraph("<b>Key Strengths:</b>", heading_style))
+            for strength in analysis['strengths']:
+                story.append(Paragraph(f"• {strength}", normal_style))
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Gaps
+        if analysis.get('gaps'):
+            story.append(Paragraph("<b>Development Areas:</b>", heading_style))
+            for gap in analysis['gaps']:
+                story.append(Paragraph(f"• {gap}", normal_style))
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Company values alignment
+        if analysis.get('company_values_alignment'):
+            cv_align = analysis['company_values_alignment']
+            story.append(Paragraph(f"<b>Company Culture Fit:</b> {round(cv_align.get('score', 0))}%", heading_style))
+            if cv_align.get('notes'):
+                story.append(Paragraph(cv_align['notes'], normal_style))
+            story.append(Spacer(1, 0.15*inch))
+        
+        # Category scores table
+        if analysis.get('category_scores'):
+            story.append(Paragraph("<b>Category Breakdown:</b>", heading_style))
+            table_data = [['Category', 'Score']]
+            for cat in analysis['category_scores']:
+                table_data.append([cat['category'].capitalize(), f"{round(cat['score'])}%"])
+            
+            t = Table(table_data, colWidths=[3*inch, 1.5*inch])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), primary_color),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
+            ]))
+            story.append(t)
+        
+        if idx < len(sorted_analyses):
+            story.append(PageBreak())
+    
+    # Build PDF
+    doc.build(story)
+    pdf_buffer.seek(0)
+    
+    # Return as streaming response
+    filename = f"Analysis_Report_{job['title'].replace(' ', '_')}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 # ==================== SETTINGS ROUTES ====================
 
 @api_router.get("/settings")
