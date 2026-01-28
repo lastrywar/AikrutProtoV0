@@ -57,8 +57,8 @@ export const PendingApproval = () => {
             <p className="text-sm text-center text-slate-500">
               Need immediate access? Contact our admin team at:
               <br />
-              <a href="mailto:admin@talentai.app" className="text-indigo-600 hover:underline font-medium">
-                admin@talentai.app
+              <a href="mailto:admin@aikrut.app" className="text-indigo-600 hover:underline font-medium">
+                admin@aikrut.app
               </a>
             </p>
 
