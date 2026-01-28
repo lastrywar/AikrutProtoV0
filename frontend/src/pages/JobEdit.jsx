@@ -42,9 +42,22 @@ export const JobEdit = () => {
 
   useEffect(() => {
     if (!isNew) {
+      setLoading(true);
       loadJob();
+    } else {
+      // Reset form for new job
+      setLoading(false);
+      setForm({
+        title: '',
+        description: '',
+        requirements: '',
+        location: '',
+        employment_type: 'full-time',
+        salary_range: '',
+        playbook: null
+      });
     }
-  }, [id, isNew]);
+  }, [id]);
 
   const loadJob = async () => {
     try {
