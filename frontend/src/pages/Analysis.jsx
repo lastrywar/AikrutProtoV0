@@ -926,12 +926,13 @@ export const Analysis = () => {
                     checked={selectedResults.length === results.length && results.length > 0}
                     onCheckedChange={selectAllResults}
                   />
-                  <div className="grid grid-cols-12 gap-4 flex-1 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                  <div className="grid grid-cols-13 gap-4 flex-1 text-xs font-medium text-slate-500 uppercase tracking-wide">
                     <div className="col-span-3">Candidate</div>
                     <div className="col-span-2 text-center">Score</div>
                     <div className="col-span-2 text-center">Character</div>
                     <div className="col-span-2 text-center">Requirements</div>
                     <div className="col-span-2 text-center">Skills</div>
+                    <div className="col-span-1 text-center">Culture</div>
                     <div className="col-span-1 text-center">Actions</div>
                   </div>
                 </div>
