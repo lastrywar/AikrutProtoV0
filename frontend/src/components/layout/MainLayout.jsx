@@ -19,6 +19,11 @@ export const MainLayout = () => {
     return <Navigate to="/login" replace />;
   }
 
+  // Check if user is approved and active
+  if (user.is_approved === false || user.is_active === false) {
+    return <Navigate to="/pending-approval" replace />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Sidebar />
