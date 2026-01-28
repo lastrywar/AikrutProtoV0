@@ -995,27 +995,115 @@ async def get_admin_dashboard(admin: dict = Depends(get_current_admin)):
     )
 
 @api_router.get("/admin/users")
-async def get_all_users(admin: dict = Depends(get_current_admin)):
-    users_cursor = db.users.find({}, {"_id": 0, "password": 0})
+async def get_all_users(
+    admin: dict = Depends(get_current_admin),
+    skip: int = 0,
+    limit: int = 50,
+    search: str = None
+):
+    """
+    Get all users with pagination and optional search.
+    Optimized with aggregation pipeline to avoid N+1 queries.
+    """
+    # Build match filter for search
+    match_filter = {}
+    if search:
+        match_filter["$or"] = [
+            {"email": {"$regex": search, "$options": "i"}},
+            {"name": {"$regex": search, "$options": "i"}}
+        ]
+    
+    # Aggregation pipeline for efficient stats calculation
+    pipeline = [
+        {"$match": match_filter},
+        {"$sort": {"created_at": -1}},
+        {"$skip": skip},
+        {"$limit": limit},
+        {
+            "$lookup": {
+                "from": "companies",
+                "localField": "company_id",
+                "foreignField": "id",
+                "as": "company_data"
+            }
+        },
+        {
+            "$addFields": {
+                "company_id_for_lookup": {"$ifNull": ["$company_id", None]}
+            }
+        }
+    ]
+    
+    users_cursor = db.users.aggregate(pipeline)
     users = []
     
-    async for user in users_cursor:
-        # Get user statistics
-        user_id = user["id"]
-        jobs_count = await db.jobs.count_documents({"company_id": user.get("company_id")}) if user.get("company_id") else 0
-        candidates_count = await db.candidates.count_documents({"company_id": user.get("company_id")}) if user.get("company_id") else 0
-        analyses_count = await db.analyses.count_documents({"user_id": user_id})
-        
-        users.append({
-            **user,
-            "stats": {
-                "jobs_count": jobs_count,
-                "candidates_count": candidates_count,
-                "analyses_count": analyses_count
-            }
-        })
+    # Collect all user IDs and company IDs for batch queries
+    user_data_list = []
+    company_ids = set()
     
-    return {"users": users}
+    async for user in users_cursor:
+        # Remove _id and password
+        user.pop("_id", None)
+        user.pop("password", None)
+        user.pop("company_data", None)
+        user_data_list.append(user)
+        if user.get("company_id"):
+            company_ids.add(user["company_id"])
+    
+    # Batch queries for stats
+    if user_data_list:
+        # Get jobs count per company
+        jobs_pipeline = [
+            {"$match": {"company_id": {"$in": list(company_ids)}}} if company_ids else {"$match": {}},
+            {"$group": {"_id": "$company_id", "count": {"$sum": 1}}}
+        ]
+        jobs_by_company = {}
+        if company_ids:
+            async for item in db.jobs.aggregate(jobs_pipeline):
+                jobs_by_company[item["_id"]] = item["count"]
+        
+        # Get candidates count per company
+        candidates_pipeline = [
+            {"$match": {"company_id": {"$in": list(company_ids)}}} if company_ids else {"$match": {}},
+            {"$group": {"_id": "$company_id", "count": {"$sum": 1}}}
+        ]
+        candidates_by_company = {}
+        if company_ids:
+            async for item in db.candidates.aggregate(candidates_pipeline):
+                candidates_by_company[item["_id"]] = item["count"]
+        
+        # Get analyses count per user
+        user_ids = [u["id"] for u in user_data_list]
+        analyses_pipeline = [
+            {"$match": {"user_id": {"$in": user_ids}}},
+            {"$group": {"_id": "$user_id", "count": {"$sum": 1}}}
+        ]
+        analyses_by_user = {}
+        async for item in db.analyses.aggregate(analyses_pipeline):
+            analyses_by_user[item["_id"]] = item["count"]
+        
+        # Combine results
+        for user in user_data_list:
+            company_id = user.get("company_id")
+            users.append({
+                **user,
+                "stats": {
+                    "jobs_count": jobs_by_company.get(company_id, 0) if company_id else 0,
+                    "candidates_count": candidates_by_company.get(company_id, 0) if company_id else 0,
+                    "analyses_count": analyses_by_user.get(user["id"], 0)
+                }
+            })
+    
+    # Get total count for pagination
+    total = await db.users.count_documents(match_filter)
+    
+    return {
+        "users": users,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "has_more": (skip + limit) < total
+    }
 
 @api_router.put("/admin/users/{user_id}")
 async def update_user_by_admin(
