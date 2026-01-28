@@ -1623,6 +1623,7 @@ async def generate_job_playbook(job_id: str, current_user: dict = Depends(get_cu
     
     # Get global settings and user language preference
     global_settings = await get_global_ai_settings()
+    logger.info(f"Analysis: Retrieved global settings - has_key: {bool(global_settings.get('openrouter_api_key'))}, model: {global_settings.get('model_name')}")
     user_settings = await get_ai_settings(current_user["id"])
     
     lang_instruction = "Write in English." if user_settings.language == "en" else "Write in Indonesian (Bahasa Indonesia)."
@@ -2856,6 +2857,7 @@ async def run_batch_analysis(request: BatchAnalysisRequest, current_user: dict =
     
     # Get global settings and user language preference
     global_settings = await get_global_ai_settings()
+    logger.info(f"Analysis: Retrieved global settings - has_key: {bool(global_settings.get('openrouter_api_key'))}, model: {global_settings.get('model_name')}")
     user_settings = await get_ai_settings(current_user["id"])
     
     results = []
