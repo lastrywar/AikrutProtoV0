@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { Avatar, AvatarFallback } from '../ui/avatar';
-import { Bell } from 'lucide-react';
+import { Bell, DollarSign } from 'lucide-react';
 
 export const TopBar = ({ title, subtitle }) => {
   const { user } = useAuth();
@@ -18,6 +18,15 @@ export const TopBar = ({ title, subtitle }) => {
       </div>
       
       <div className="flex items-center gap-4">
+        {/* Credit Balance */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100">
+          <DollarSign className="w-4 h-4 text-indigo-600" />
+          <span className="text-sm font-semibold text-indigo-900">
+            {user?.credits !== undefined ? user.credits.toFixed(2) : '0.00'}
+          </span>
+          <span className="text-xs text-indigo-600">credits</span>
+        </div>
+        
         <button 
           className="p-2 rounded-full hover:bg-slate-100 transition-colors relative"
           data-testid="notifications-btn"
