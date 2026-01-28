@@ -2363,7 +2363,8 @@ async def extract_tags_from_evidence(
     deleted_tags: List[str],
     api_key: str,
     model: str,
-    admin_settings: Optional[Dict] = None
+    admin_settings: Optional[Dict] = None,
+    user_id: Optional[str] = None
 ) -> Dict:
     """
     Extract structured tags from candidate evidence using AI.
