@@ -35,31 +35,33 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          
-          {/* Admin Routes */}
-          <Route path="/admin-login" element={<AdminLogin />} />
-          <Route path="/super-admin" element={<SuperAdmin />} />
-          
-          {/* Protected Routes */}
-          <Route element={<MainLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/company" element={<Company />} />
-            <Route path="/jobs" element={<Jobs />} />
-            <Route path="/jobs/:id" element={<JobEdit />} />
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/analysis" element={<Analysis />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/admin-settings" element={<AdminSettings />} />
-          </Route>
-          
-          {/* Redirect root to dashboard */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            
+            {/* Admin Routes */}
+            <Route path="/admin-login" element={<AdminLogin />} />
+            <Route path="/super-admin" element={<SuperAdmin />} />
+            
+            {/* Protected Routes */}
+            <Route element={<MainLayout />}>
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/company" element={<Company />} />
+              <Route path="/jobs" element={<Jobs />} />
+              <Route path="/jobs/:id" element={<JobEdit />} />
+              <Route path="/candidates" element={<Candidates />} />
+              <Route path="/analysis" element={<Analysis />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/admin-settings" element={<AdminSettings />} />
+            </Route>
+            
+            {/* Redirect root to dashboard */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
       </BrowserRouter>
       <Toaster position="top-right" richColors />
     </AuthProvider>
