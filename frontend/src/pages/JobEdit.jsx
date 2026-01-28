@@ -83,30 +83,6 @@ export const JobEdit = () => {
     loadData();
   }, [id, isNew, navigate]);
 
-  const loadJob = async () => {
-    try {
-      const res = await jobsAPI.get(id);
-      const data = res.data;
-      
-      // Ensure all text fields are strings
-      setForm({
-        ...data,
-        title: String(data.title || ''),
-        description: String(data.description || ''),
-        requirements: typeof data.requirements === 'string' ? data.requirements : (data.requirements ? JSON.stringify(data.requirements) : ''),
-        location: String(data.location || ''),
-        employment_type: data.employment_type || 'full-time',
-        salary_range: String(data.salary_range || ''),
-        playbook: data.playbook || null
-      });
-    } catch (error) {
-      toast.error('Failed to load job');
-      navigate('/jobs');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!form.title.trim()) {
       toast.error('Job title is required');
