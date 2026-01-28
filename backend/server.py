@@ -2547,9 +2547,15 @@ async def extract_candidate_tags(
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     
-    settings = await get_ai_settings(current_user["id"])
-    if not settings.openrouter_api_key:
-        raise HTTPException(status_code=400, detail="OpenRouter API key not configured. Please configure in Settings.")
+    # Check credits first
+    credit_check = await check_user_credits(current_user["id"])
+    if not credit_check.has_credits:
+        raise HTTPException(status_code=402, detail=credit_check.message)
+    
+    # Get global settings
+    global_settings = await get_global_ai_settings()
+    if not global_settings.get("openrouter_api_key"):
+        raise HTTPException(status_code=400, detail="OpenRouter API key not configured. Please configure in admin settings.")
     
     admin_settings = await db.admin_settings.find_one({"user_id": current_user["id"]}, {"_id": 0})
     
@@ -2560,13 +2566,14 @@ async def extract_candidate_tags(
     # Preserve manual tags
     manual_tags = [t for t in existing_tags if t.get("source") == "MANUAL"]
     
-    # Extract new tags
+    # Extract new tags (this will handle credit deduction internally)
     result = await extract_tags_from_evidence(
         evidence_list,
         deleted_tags,
-        settings.openrouter_api_key,
-        settings.model_name,
-        admin_settings
+        global_settings["openrouter_api_key"],
+        global_settings["model_name"],
+        admin_settings,
+        current_user["id"]  # Pass user_id for credit deduction
     )
     
     # Combine manual tags with new auto tags (manual takes precedence)
