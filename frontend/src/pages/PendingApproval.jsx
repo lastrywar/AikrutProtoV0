@@ -46,7 +46,6 @@ export const PendingApproval = () => {
                 <p className="font-medium mb-1">What happens next?</p>
                 <ul className="list-disc list-inside space-y-1 text-slate-600">
                   <li>Our admin team will review your registration</li>
-                  <li>You'll receive an email once approved</li>
                   <li>Approval typically takes 24-48 hours</li>
                 </ul>
               </div>
@@ -57,8 +56,18 @@ export const PendingApproval = () => {
             <p className="text-sm text-center text-slate-500">
               Need immediate access? Contact our admin team at:
               <br />
-              <a href="mailto:admin@aikrut.app" className="text-indigo-600 hover:underline font-medium">
-                admin@aikrut.app
+              <a href="mailto:admin@widyaanalytic.org" className="text-indigo-600 hover:underline font-medium">
+                admin@widyaanalytic.org
+              </a>
+              <br />
+              <p>or</p>
+              <a 
+                href="https://wa.me/6281225056948" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:underline font-medium"
+              >
+                Contact by WhatsApp
               </a>
             </p>
 
